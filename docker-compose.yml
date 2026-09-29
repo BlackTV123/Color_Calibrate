@@ -1,0 +1,62 @@
+version: '3.8'
+
+# =====================================================================
+# Production-like Docker Compose Deployment
+# Bruise Color Calibration & Analysis Clinical System
+# =====================================================================
+
+services:
+  # 1. Relational Database Service (MySQL 8.0)
+  db:
+    image: mysql:8.0
+    container_name: bruise_mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: bruise_db
+      MYSQL_USER: bruise_user
+      MYSQL_PASSWORD: bruise_secure_password_2026
+    ports:
+      - "3306:3306"
+    volumes:
+      # Persistent named volume ensures patient records and auth data survive restarts
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -prootpassword"]
+      interval: 8s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - bruise_network
+
+  # 2. Unified Application Container (FastAPI + React Multi-stage Build)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bruise_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 8000
+      DATABASE_URL: mysql://bruise_user:bruise_secure_password_2026@db:3306/bruise_db
+      JWT_SECRET: bcc_production_jwt_clinical_secret_key_2026
+      PYTHONUNBUFFERED: 1
+    ports:
+      - "8000:8000"
+    networks:
+      - bruise_network
+
+# Persistent data volumes
+volumes:
+  mysql_data:
+    driver: local
+
+# Isolated container network
+networks:
+  bruise_network:
+    driver: bridge

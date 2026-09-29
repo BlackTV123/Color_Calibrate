@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bruise Color Calibrate — Clinical Imaging Prototype</title>
+<style>
+:root{
+  --navy:#10233d; --navy2:#1a3557; --teal:#1f6f78; --teal2:#dfeff0;
+  --ink:#182332; --muted:#697586; --line:#d9e0e7; --bg:#f5f7f9;
+  --white:#ffffff; --success:#276749; --warning:#8a6116; --danger:#9b2c2c;
+  --shadow:0 8px 24px rgba(16,35,61,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Noto Sans Thai","Segoe UI",Tahoma,sans-serif;background:var(--bg);color:var(--ink)}
+button,input,select{font:inherit}
+.hidden{display:none!important}
+.small{font-size:12px;color:var(--muted)}
+.muted{color:var(--muted)}
+.badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:99px;font-size:12px;font-weight:700}
+.badge.ok{background:#e9f7ef;color:var(--success)}
+.badge.warn{background:#fff7e5;color:var(--warning)}
+.badge.info{background:#e7f0fa;color:#255581}
+.badge.danger{background:#fdecec;color:var(--danger)}
+.btn{border:1px solid transparent;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer;transition:.15s}
+.btn.primary{background:var(--navy);color:#fff}.btn.primary:hover{background:var(--navy2)}
+.btn.secondary{background:#fff;color:var(--navy);border-color:var(--line)}
+.btn.teal{background:var(--teal);color:#fff}
+.btn.ghost{background:transparent;border-color:var(--line);color:var(--navy)}
+.input{width:100%;border:1px solid var(--line);background:#fff;border-radius:8px;padding:10px 12px;outline:none}
+.input:focus{border-color:#6b8aa9;box-shadow:0 0 0 3px rgba(80,125,169,.12)}
+label{font-size:13px;font-weight:700;color:#405064;display:block;margin-bottom:6px}
+.card{background:#fff;border:1px solid #e0e5ea;border-radius:12px;box-shadow:var(--shadow)}
+.card-h{padding:16px 18px;border-bottom:1px solid #e7ebef;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card-b{padding:18px}
+.kpi{padding:18px}.kpi .v{font-size:28px;font-weight:800;color:var(--navy);margin-top:8px}.kpi .t{font-size:13px;color:var(--muted)}
+.grid{display:grid;gap:16px}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+#loginView{min-height:100vh;display:grid;grid-template-columns:1.08fr .92fr;background:#fff}
+.login-brand{background:var(--navy);color:#fff;padding:70px;display:flex;flex-direction:column;justify-content:space-between}
+.brandmark{display:flex;gap:12px;align-items:center;font-weight:800;letter-spacing:.3px}
+.brand-icon{width:36px;height:36px;border-radius:8px;background:#fff;display:grid;place-items:center;color:var(--navy);font-weight:900}
+.login-brand h1{font-size:42px;line-height:1.15;margin:0 0 16px;max-width:620px}
+.login-brand p{color:#d5deea;max-width:620px;line-height:1.7}
+.login-panel{display:grid;place-items:center;padding:42px}
+.login-box{width:min(430px,100%)}.login-box h2{font-size:28px;margin-bottom:8px}.login-box .sub{color:var(--muted);margin-bottom:28px}
+.formrow{margin-bottom:16px}.demo-box{background:#f1f5f8;border:1px solid var(--line);padding:12px;border-radius:8px;margin-top:16px;font-size:13px;line-height:1.6}
+
+#appView{min-height:100vh}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:248px;background:var(--navy);color:#fff;padding:18px 14px;display:flex;flex-direction:column}
+.sidebrand{padding:8px 10px 22px;display:flex;align-items:center;gap:10px;font-weight:800}
+.navitem{padding:11px 12px;border-radius:8px;color:#d4deea;display:flex;align-items:center;gap:11px;cursor:pointer;margin:2px 0;font-size:14px}
+.navitem:hover,.navitem.active{background:#1c395e;color:#fff}
+.navdot{width:8px;height:8px;border-radius:50%;background:#83a4c6}
+.navitem.active .navdot{background:#fff}
+.sidefoot{margin-top:auto;padding:12px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;color:#c6d2df}
+.main{margin-left:248px}
+.topbar{height:66px;background:#fff;border-bottom:1px solid #e1e6eb;display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:5}
+.top-title{font-weight:800;color:var(--navy)}
+.userchip{display:flex;align-items:center;gap:10px}.avatar{width:34px;height:34px;background:#e7eef5;border-radius:50%;display:grid;place-items:center;font-weight:800;color:var(--navy)}
+.page{padding:24px;max-width:1500px;margin:auto}.page-title{font-size:26px;font-weight:800;color:var(--navy);margin:0 0 4px}.page-sub{color:var(--muted);margin-bottom:20px}
+.section{display:none}.section.active{display:block}
+.upload-zone{border:1.5px dashed #9eabb9;border-radius:12px;padding:28px;text-align:center;background:#fafbfd;cursor:pointer}
+.upload-zone.drag{background:#eef6f6;border-color:var(--teal)}
+.upload-icon{width:48px;height:48px;border-radius:12px;background:#e9eff5;color:var(--navy);display:grid;place-items:center;margin:0 auto 12px;font-size:23px}
+.preview-wrap{background:#10161e;border-radius:10px;min-height:360px;display:grid;place-items:center;overflow:hidden;position:relative}
+#imageCanvas{max-width:100%;max-height:520px;cursor:crosshair}
+.placeholder{color:#aeb9c5;text-align:center;padding:30px}
+.ref-pill{position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,.92);padding:8px 10px;border-radius:7px;font-size:12px;color:var(--ink)}
+.palette{display:flex;gap:10px;flex-wrap:wrap}
+.swatch{width:112px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.swatch-color{height:52px}.swatch-txt{padding:7px;font-size:11px;line-height:1.45}
+.metric{border:1px solid var(--line);padding:14px;border-radius:9px;background:#fbfcfd}.metric .label{font-size:12px;color:var(--muted)}.metric .value{font-weight:800;font-size:20px;color:var(--navy);margin-top:4px}
+.callout{border-left:4px solid var(--teal);padding:12px 14px;background:#f1f8f8;border-radius:6px;line-height:1.55}
+.disclaimer{border:1px solid #ebd59b;background:#fff9e9;color:#6c5317;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.55}
+canvas.chart{width:100%;height:240px;border:1px solid #edf0f2;border-radius:8px;background:#fff}
+.tbl-wrap{overflow:auto}.tbl{width:100%;border-collapse:collapse;font-size:13px}.tbl th{text-align:left;background:#f6f8fa;color:#526173;padding:11px;border-bottom:1px solid var(--line);white-space:nowrap}.tbl td{padding:11px;border-bottom:1px solid #e9edf1;vertical-align:middle}.tbl tr:hover td{background:#fbfcfd}
+.color-dot{width:15px;height:15px;border-radius:4px;border:1px solid rgba(0,0,0,.15);display:inline-block;margin-right:3px}
+.filters{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px;margin-bottom:14px}
+.profile-grid{display:grid;grid-template-columns:220px 1fr;gap:22px}.profile-photo{height:220px;border:1px solid var(--line);border-radius:12px;background:#eef2f6;display:grid;place-items:center;font-size:72px;font-weight:800;color:#8ba0b5}
+hr{border:none;border-top:1px solid var(--line);margin:20px 0}
+@media(max-width:1050px){.g4{grid-template-columns:repeat(2,1fr)}.g2{grid-template-columns:1fr}.sidebar{width:210px}.main{margin-left:210px}.filters{grid-template-columns:1fr 1fr}.login-brand{padding:48px}}
+@media(max-width:760px){#loginView{grid-template-columns:1fr}.login-brand{display:none}.sidebar{position:static;width:100%;height:auto}.main{margin-left:0}.navitems{display:flex;overflow:auto}.sidefoot{display:none}.g4{grid-template-columns:1fr 1fr}.page{padding:16px}.filters{grid-template-columns:1fr}.profile-grid{grid-template-columns:1fr}.profile-photo{height:140px}.topbar{position:static}}
+</style>
+</head>
+<body>
+
+<section id="loginView">
+  <div class="login-brand">
+    <div class="brandmark"><div class="brand-icon">BC</div> BRUISE COLOR CALIBRATE</div>
+    <div>
+      <div class="badge info" style="background:#dfe9f4;color:#173454;margin-bottom:18px">Clinical Imaging Prototype</div>
+      <h1>Color calibration and bruise image assessment workspace.</h1>
+      <p>ระบบต้นแบบสำหรับจัดการภาพรอยฟกช้ำ ปรับเทียบสี แสดง dominant colors และ RGB histogram พร้อมบันทึกประวัติการวิเคราะห์อย่างเป็นระบบ</p>
+    </div>
+    <div style="color:#99adc2;font-size:12px">Prototype UI • Local browser storage • No cloud upload</div>
+  </div>
+  <div class="login-panel">
+    <div class="login-box">
+      <h2>Sign in</h2>
+      <div class="sub">เข้าสู่ระบบ Bruise Color Calibrate</div>
+      <div class="formrow"><label>Email</label><input id="loginEmail" class="input" value="demo@bruise.local"></div>
+      <div class="formrow"><label>Password</label><input id="loginPassword" class="input" type="password" value="demo123"></div>
+      <button class="btn primary" style="width:100%" onclick="login()">Sign in</button>
+      <div id="loginError" class="small" style="color:var(--danger);margin-top:10px"></div>
+      <div class="demo-box"><b>Demo account</b><br>Email: demo@bruise.local<br>Password: demo123</div>
+    </div>
+  </div>
+</section>
+
+<section id="appView" class="hidden">
+  <aside class="sidebar">
+    <div class="sidebrand"><div class="brand-icon">BC</div><div>Bruise Color<br><span style="font-weight:500;color:#aec0d3">Calibrate</span></div></div>
+    <div class="navitems">
+      <div class="navitem active" data-page="dashboard"><span class="navdot"></span> Dashboard</div>
+      <div class="navitem" data-page="analysis"><span class="navdot"></span> New Analysis</div>
+      <div class="navitem" data-page="history"><span class="navdot"></span> Analysis History</div>
+      <div class="navitem" data-page="profile"><span class="navdot"></span> Profile</div>
+    </div>
+    <div class="sidefoot">Prototype v0.1<br>For research / workflow demonstration only.</div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="top-title" id="topTitle">Dashboard</div>
+      <div class="userchip"><div><div id="chipName" style="font-size:13px;font-weight:700">Demo User</div><div class="small">Research Workspace</div></div><div class="avatar" id="avatar">DU</div><button class="btn ghost" onclick="logout()">Logout</button></div>
+    </header>
+
+    <div class="page">
+      <section id="dashboard" class="section active">
+        <h1 class="page-title">Dashboard</h1>
+        <div class="page-sub">ภาพรวมการวิเคราะห์และการปรับเทียบสี</div>
+        <div class="grid g4">
+          <div class="card kpi"><div class="t">Total analyses</div><div class="v" id="kpiTotal">0</div><div class="small">records stored locally</div></div>
+          <div class="card kpi"><div class="t">Calibrated images</div><div class="v" id="kpiCal">0</div><div class="small">with neutral reference</div></div>
+          <div class="card kpi"><div class="t">This month</div><div class="v" id="kpiMonth">0</div><div class="small">new analyses</div></div>
+          <div class="card kpi"><div class="t">Last assessment</div><div class="v" style="font-size:20px" id="kpiLast">—</div><div class="small">estimated range</div></div>
+        </div>
+        <div class="grid g2" style="margin-top:16px">
+          <div class="card">
+            <div class="card-h"><b>Recent analyses</b><button class="btn secondary" onclick="showPage('history')">View history</button></div>
+            <div class="card-b"><div id="recentList" class="muted">No analyses yet.</div></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><b>Workflow</b><span class="badge ok">Ready</span></div>
+            <div class="card-b">
+              <div class="callout"><b>1. Upload image → 2. Select neutral reference → 3. Calibrate → 4. Analyze color → 5. Save result</b><br><span class="small">A white/gray calibration card in the same lighting condition improves repeatability of the color measurement.</span></div>
+              <div style="margin-top:14px"><button class="btn primary" onclick="showPage('analysis')">Start new analysis</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="analysis" class="section">
+        <h1 class="page-title">New Analysis</h1>
+        <div class="page-sub">อัปโหลดภาพ ปรับเทียบสี และประเมินสีของรอยฟกช้ำ</div>
+
+        <div class="grid g2">
+          <div class="card">
+            <div class="card-h"><b>1. Image acquisition</b><span id="fileBadge" class="badge info">No image</span></div>
+            <div class="card-b">
+              <div id="dropZone" class="upload-zone">
+                <div class="upload-icon">↑</div>
+                <b>Drop image here or click to browse</b>
+                <div class="small" style="margin-top:6px">JPG, PNG, WEBP • processed in this browser</div>
+                <input id="fileInput" type="file" accept="image/*" class="hidden">
+              </div>
+              <div style="height:14px"></div>
+              <div class="preview-wrap">
+                <canvas id="imageCanvas" width="900" height="600"></canvas>
+                <div id="placeholder" class="placeholder">Image preview<br><span class="small">Upload an image to begin.</span></div>
+                <div id="refPill" class="ref-pill hidden">Reference pixel: <b id="refText">—</b></div>
+              </div>
+              <div class="small" style="margin-top:9px">Tip: คลิกบริเวณสีขาว/เทาของ calibration card ในภาพเพื่อกำหนด neutral reference.</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h"><b>2. Color calibration</b><span id="calBadge" class="badge warn">Not calibrated</span></div>
+            <div class="card-b">
+              <div class="grid g2">
+                <div class="metric"><div class="label">Reference RGB</div><div class="value" id="refRgb">—</div></div>
+                <div class="metric"><div class="label">Calibration gain</div><div class="value" id="gainTxt">—</div></div>
+              </div>
+              <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+                <button id="calibrateBtn" class="btn teal" onclick="calibrate()" disabled>Apply neutral calibration</button>
+                <button id="resetCalBtn" class="btn secondary" onclick="resetCalibration()" disabled>Reset</button>
+              </div>
+              <hr>
+              <label>Case / Subject ID</label>
+              <input id="caseId" class="input" placeholder="e.g. CASE-2026-001">
+              <div style="height:12px"></div>
+              <label>Body site</label>
+              <select id="bodySite" class="input">
+                <option value="">Select body site</option><option>Arm</option><option>Leg</option><option>Torso</option><option>Face</option><option>Other</option>
+              </select>
+              <div style="height:12px"></div>
+              <label>Notes</label>
+              <input id="notes" class="input" placeholder="Optional note">
+              <div style="margin-top:16px"><button id="analyzeBtn" class="btn primary" style="width:100%" onclick="analyze()" disabled>Analyze color</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="resultsBlock" class="hidden" style="margin-top:16px">
+          <div class="grid g2">
+            <div class="card">
+              <div class="card-h"><b>Color profile</b><span class="badge ok">Analysis complete</span></div>
+              <div class="card-b">
+                <div class="grid g2">
+                  <div class="metric"><div class="label">Mean RGB</div><div class="value" id="meanRgb">—</div></div>
+                  <div class="metric"><div class="label">Mean lightness</div><div class="value" id="meanLight">—</div></div>
+                </div>
+                <div style="margin-top:18px"><label>Dominant colors</label><div id="palette" class="palette"></div></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h"><b>Bruise age assessment</b><span class="badge warn">Experimental</span></div>
+              <div class="card-b">
+                <div class="metric"><div class="label">Estimated age range</div><div class="value" id="ageRange">—</div></div>
+                <div style="height:10px"></div>
+                <div class="metric"><div class="label">Color-stage confidence</div><div class="value" id="confidence">—</div></div>
+                <div id="stageText" class="callout" style="margin-top:12px"></div>
+                <div class="disclaimer" style="margin-top:12px">
+                  <b>Important:</b> ตัวเลขนี้เป็น heuristic สำหรับ prototype เท่านั้น ไม่ใช่การวินิจฉัยหรือการระบุอายุแผลทางนิติวิทยาศาสตร์ การศึกษาพบว่าการประเมินอายุรอยฟกช้ำจากสีหรือ RGB เพียงอย่างเดียวไม่แม่นยำเพียงพอสำหรับการสรุปเชิงคลินิก
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px">
+            <div class="card-h"><b>RGB Histogram</b><span class="small">Normalized pixel distribution</span></div>
+            <div class="card-b"><canvas id="histCanvas" class="chart" width="1100" height="280"></canvas></div>
+          </div>
+
+          <div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+            <button class="btn secondary" onclick="clearAnalysis()">Clear</button>
+            <button class="btn primary" onclick="saveAnalysis()">Save to history</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="history" class="section">
+        <h1 class="page-title">Analysis History</h1>
+        <div class="page-sub">ค้นหาและกรองประวัติการวิเคราะห์</div>
+        <div class="card">
+          <div class="card-b">
+            <div class="filters">
+              <input id="searchHistory" class="input" placeholder="Search case ID, file name, body site..." oninput="renderHistory()">
+              <select id="filterAge" class="input" onchange="renderHistory()"><option value="">All age ranges</option><option>0–3 days</option><option>3–7 days</option><option>7–14 days</option><option>Mixed / indeterminate</option></select>
+              <select id="filterCal" class="input" onchange="renderHistory()"><option value="">All calibration</option><option value="yes">Calibrated</option><option value="no">Not calibrated</option></select>
+              <button class="btn secondary" onclick="exportCsv()">Export CSV</button>
+            </div>
+            <div class="tbl-wrap">
+              <table class="tbl"><thead><tr><th>Date</th><th>Case ID</th><th>Image</th><th>Body site</th><th>Dominant colors</th><th>Estimated age</th><th>Calibration</th><th></th></tr></thead><tbody id="historyBody"></tbody></table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="profile" class="section">
+        <h1 class="page-title">Profile</h1>
+        <div class="page-sub">ข้อมูลผู้ใช้งานและ workspace</div>
+        <div class="card">
+          <div class="card-b profile-grid">
+            <div>
+              <div class="profile-photo" id="profileInitial">DU</div>
+              <div class="small" style="margin-top:8px;text-align:center">Local demo profile</div>
+            </div>
+            <div>
+              <div class="grid g2">
+                <div><label>Full name</label><input id="pName" class="input" value="Demo User"></div>
+                <div><label>Email</label><input id="pEmail" class="input" value="demo@bruise.local"></div>
+                <div><label>Organization</label><input id="pOrg" class="input" value="Clinical Imaging Lab"></div>
+                <div><label>Role</label><input id="pRole" class="input" value="Researcher"></div>
+              </div>
+              <div style="margin-top:16px"><label>Workspace note</label><input id="pNote" class="input" value="Bruise color calibration study"></div>
+              <div style="margin-top:18px"><button class="btn primary" onclick="saveProfile()">Save profile</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</section>
+
+<script>
+const $=id=>document.getElementById(id);
+let img=null, originalImageData=null, workingImageData=null, refPixel=null, calibrated=false, currentAnalysis=null, currentFileName='';
+const KEY_H='bcc_history_v1', KEY_P='bcc_profile_v1', KEY_S='bcc_session_v1';
+
+function login(){
+  const e=$('loginEmail').value.trim(), p=$('loginPassword').value;
+  if(e==='demo@bruise.local' && p==='demo123'){
+    localStorage.setItem(KEY_S,'1'); enterApp();
+  } else $('loginError').textContent='Invalid demo credentials.';
+}
+function logout(){localStorage.removeItem(KEY_S); location.reload();}
+function enterApp(){
+  $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
+  loadProfile(); seedHistory(); refreshDashboard(); renderHistory(); showPage('dashboard');
+}
+document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>showPage(n.dataset.page));
+function showPage(id){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  $(id).classList.add('active');
+  document.querySelectorAll('.navitem').forEach(n=>n.classList.toggle('active', n.dataset.page===id));
+  $('topTitle').textContent={dashboard:'Dashboard',analysis:'New Analysis',history:'Analysis History',profile:'Profile'}[id];
+  if(id==='history')renderHistory();
+}
+function loadProfile(){
+  const p=JSON.parse(localStorage.getItem(KEY_P)||'null')||{name:'Demo User',email:'demo@bruise.local',org:'Clinical Imaging Lab',role:'Researcher',note:'Bruise color calibration study'};
+  $('pName').value=p.name;$('pEmail').value=p.email;$('pOrg').value=p.org;$('pRole').value=p.role;$('pNote').value=p.note;
+  updateProfileUi(p);
+}
+function saveProfile(){
+  const p={name:$('pName').value,email:$('pEmail').value,org:$('pOrg').value,role:$('pRole').value,note:$('pNote').value};
+  localStorage.setItem(KEY_P,JSON.stringify(p)); updateProfileUi(p); alert('Profile saved.');
+}
+function initials(name){return (name||'U').split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase()}
+function updateProfileUi(p){$('chipName').textContent=p.name;$('avatar').textContent=initials(p.name);$('profileInitial').textContent=initials(p.name)}
+
+const dz=$('dropZone'), fi=$('fileInput');
+dz.onclick=()=>fi.click();
+['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag')}));
+['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag')}));
+dz.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)loadFile(f)});
+fi.addEventListener('change',()=>{if(fi.files[0])loadFile(fi.files[0])});
+
+function loadFile(file){
+  currentFileName=file.name;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    img=new Image();
+    img.onload=()=>{
+      const c=$('imageCanvas'), ctx=c.getContext('2d',{willReadFrequently:true});
+      const maxW=1000,maxH=650, scale=Math.min(maxW/img.width,maxH/img.height,1);
+      c.width=Math.max(1,Math.round(img.width*scale)); c.height=Math.max(1,Math.round(img.height*scale));
+      ctx.drawImage(img,0,0,c.width,c.height);
+      originalImageData=ctx.getImageData(0,0,c.width,c.height);
+      workingImageData=new ImageData(new Uint8ClampedArray(originalImageData.data),c.width,c.height);
+      $('placeholder').classList.add('hidden'); $('fileBadge').className='badge ok';$('fileBadge').textContent='Image loaded';
+      $('analyzeBtn').disabled=false;$('resetCalBtn').disabled=false; calibrated=false; refPixel=null;
+      $('calBadge').className='badge warn';$('calBadge').textContent='Not calibrated';
+      $('refRgb').textContent='—';$('gainTxt').textContent='—';$('refPill').classList.add('hidden');$('calibrateBtn').disabled=true;
+      $('resultsBlock').classList.add('hidden');
+    }; img.src=ev.target.result;
+  }; reader.readAsDataURL(file);
+}
+$('imageCanvas').addEventListener('click',e=>{
+  if(!originalImageData)return;
+  const c=$('imageCanvas'),r=c.getBoundingClientRect(),x=Math.floor((e.clientX-r.left)*c.width/r.width),y=Math.floor((e.clientY-r.top)*c.height/r.height);
+  const d=workingImageData.data,i=(y*c.width+x)*4;
+  refPixel=[d[i],d[i+1],d[i+2]];$('refRgb').textContent=refPixel.join(', ');
+  $('refText').textContent=`RGB ${refPixel.join(' / ')}`;$('refPill').classList.remove('hidden');$('calibrateBtn').disabled=false;
+});
+function calibrate(){
+  if(!refPixel||!originalImageData)return;
+  const target=235, gains=refPixel.map(v=>Math.min(3,target/Math.max(v,1)));
+  $('gainTxt').textContent=gains.map(v=>v.toFixed(2)+'×').join(' / ');
+  const src=originalImageData.data,out=new Uint8ClampedArray(src.length);
+  for(let i=0;i<src.length;i+=4){out[i]=Math.min(255,src[i]*gains[0]);out[i+1]=Math.min(255,src[i+1]*gains[1]);out[i+2]=Math.min(255,src[i+2]*gains[2]);out[i+3]=src[i+3]}
+  workingImageData=new ImageData(out,originalImageData.width,originalImageData.height);
+  $('imageCanvas').getContext('2d').putImageData(workingImageData,0,0);
+  calibrated=true;$('calBadge').className='badge ok';$('calBadge').textContent='Calibrated';
+}
+function resetCalibration(){
+  if(!originalImageData)return;
+  workingImageData=new ImageData(new Uint8ClampedArray(originalImageData.data),originalImageData.width,originalImageData.height);
+  $('imageCanvas').getContext('2d').putImageData(workingImageData,0,0);calibrated=false;
+  $('calBadge').className='badge warn';$('calBadge').textContent='Not calibrated';$('gainTxt').textContent='—';
+}
+function analyze(){
+  if(!workingImageData)return;
+  const d=workingImageData.data, hist=[new Array(256).fill(0),new Array(256).fill(0),new Array(256).fill(0)];
+  let sr=0,sg=0,sb=0,n=0, bins={};
+  const step=Math.max(1,Math.floor((d.length/4)/90000));
+  for(let p=0;p<d.length/4;p+=step){
+    const i=p*4,r=d[i],g=d[i+1],b=d[i+2],a=d[i+3]; if(a<200)continue;
+    sr+=r;sg+=g;sb+=b;n++;hist[0][r]++;hist[1][g]++;hist[2][b]++;
+    const qr=Math.round(r/32)*32,qg=Math.round(g/32)*32,qb=Math.round(b/32)*32,key=`${Math.min(qr,255)},${Math.min(qg,255)},${Math.min(qb,255)}`;bins[key]=(bins[key]||0)+1;
+  }
+  const mean=[Math.round(sr/n),Math.round(sg/n),Math.round(sb/n)];
+  const light=Math.round((Math.max(...mean)+Math.min(...mean))/2/255*100);
+  const top=Object.entries(bins).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>({rgb:k.split(',').map(Number),pct:Math.round(v/n*100)}));
+  const est=estimateAge(top,mean);
+  currentAnalysis={mean,light,top,hist,age:est.range,confidence:est.conf,stage:est.stage,calibrated,file:currentFileName};
+  $('meanRgb').textContent=mean.join(', ');$('meanLight').textContent=light+'%';$('ageRange').textContent=est.range;$('confidence').textContent=est.conf;
+  $('stageText').innerHTML=`<b>${est.stage}</b><br><span class="small">${est.note}</span>`;
+  renderPalette(top);drawHistogram(hist);$('resultsBlock').classList.remove('hidden');
+}
+function estimateAge(top,mean){
+  // Educational heuristic only. Not a validated medical/forensic model.
+  let scores={early:0,mid:0,late:0};
+  top.forEach(c=>{
+    let [r,g,b]=c.rgb,w=Math.max(c.pct,1);
+    if((r>b*1.05 && r>g*1.05)||(r>90&&b>80&&g<Math.max(r,b)*.8))scores.early+=w;
+    if((b>r*.9&&b>g*1.05)||(g>r*1.05&&g>b*.9))scores.mid+=w;
+    if((r>110&&g>90&&b<Math.min(r,g)*.8)||(r>g*1.08&&g>b*1.15))scores.late+=w;
+  });
+  let entries=Object.entries(scores).sort((a,b)=>b[1]-a[1]), best=entries[0], second=entries[1];
+  if(best[1]<8 || best[1]-second[1]<4) return {range:'Mixed / indeterminate',conf:'Low',stage:'Mixed color stage',note:'Color distribution does not support a stable stage in this prototype heuristic.'};
+  if(best[0]==='early')return {range:'0–3 days',conf:best[1]>28?'Moderate':'Low',stage:'Red–purple dominant pattern',note:'Prototype mapping only; lighting, skin tone, depth, site and individual healing can alter appearance.'};
+  if(best[0]==='mid')return {range:'3–7 days',conf:best[1]>28?'Moderate':'Low',stage:'Blue/green transitional pattern',note:'Prototype mapping only; color alone cannot establish bruise age reliably.'};
+  return {range:'7–14 days',conf:best[1]>28?'Moderate':'Low',stage:'Yellow/brown resolving pattern',note:'Prototype mapping only; use longitudinal images and validated clinical methods for research.'};
+}
+function renderPalette(top){
+  $('palette').innerHTML=top.map(c=>{let [r,g,b]=c.rgb,hex='#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();return `<div class="swatch"><div class="swatch-color" style="background:rgb(${r},${g},${b})"></div><div class="swatch-txt"><b>${hex}</b><br>RGB ${r}, ${g}, ${b}<br>${c.pct}% sampled</div></div>`}).join('');
+}
+function drawHistogram(hist){
+  const c=$('histCanvas'),ctx=c.getContext('2d'),w=c.width,h=c.height,pad=32;ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='#d9e0e7';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad,8);ctx.lineTo(pad,h-pad);ctx.lineTo(w-8,h-pad);ctx.stroke();
+  const max=Math.max(...hist[0],...hist[1],...hist[2],1), colors=['#b43c4c','#3b7f5f','#446ea8'];
+  hist.forEach((arr,ci)=>{ctx.strokeStyle=colors[ci];ctx.lineWidth=1.6;ctx.beginPath();arr.forEach((v,i)=>{let x=pad+i*(w-pad-12)/255,y=h-pad-(v/max)*(h-pad-18);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()});
+  ctx.fillStyle='#6b7785';ctx.font='12px sans-serif';ctx.fillText('0',pad-3,h-10);ctx.fillText('128',w/2-10,h-10);ctx.fillText('255',w-30,h-10);
+}
+function getHistory(){return JSON.parse(localStorage.getItem(KEY_H)||'[]')}
+function setHistory(h){localStorage.setItem(KEY_H,JSON.stringify(h))}
+function seedHistory(){
+  if(localStorage.getItem(KEY_H))return;
+  const now=new Date(), iso=d=>new Date(d).toISOString();
+  setHistory([
+    {id:crypto.randomUUID?.()||'1',date:iso(now.getTime()-86400000*2),caseId:'CASE-2026-014',file:'sample_arm_014.jpg',bodySite:'Arm',age:'3–7 days',calibrated:true,colors:['#604868','#8A6570','#3E4B55']},
+    {id:crypto.randomUUID?.()||'2',date:iso(now.getTime()-86400000*8),caseId:'CASE-2026-009',file:'sample_leg_009.jpg',bodySite:'Leg',age:'7–14 days',calibrated:true,colors:['#B09B62','#8F7752','#C1AF82']},
+    {id:crypto.randomUUID?.()||'3',date:iso(now.getTime()-86400000*14),caseId:'CASE-2026-004',file:'sample_torso_004.jpg',bodySite:'Torso',age:'0–3 days',calibrated:false,colors:['#754857','#5B3C50','#8D5C65']}
+  ]);
+}
+function saveAnalysis(){
+  if(!currentAnalysis)return;
+  const h=getHistory(), caseId=$('caseId').value.trim()||('CASE-'+new Date().getFullYear()+'-'+String(h.length+1).padStart(3,'0'));
+  h.unshift({id:crypto.randomUUID?.()||String(Date.now()),date:new Date().toISOString(),caseId,file:currentFileName||'image',bodySite:$('bodySite').value||'—',notes:$('notes').value,age:currentAnalysis.age,calibrated,colors:currentAnalysis.top.slice(0,3).map(c=>'#'+c.rgb.map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase())});
+  setHistory(h);refreshDashboard();renderHistory();alert('Analysis saved to local history.');
+}
+function clearAnalysis(){
+  fi.value='';img=null;originalImageData=null;workingImageData=null;currentAnalysis=null;refPixel=null;calibrated=false;currentFileName='';
+  const c=$('imageCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);$('placeholder').classList.remove('hidden');$('resultsBlock').classList.add('hidden');$('fileBadge').className='badge info';$('fileBadge').textContent='No image';$('analyzeBtn').disabled=true;$('calibrateBtn').disabled=true;$('resetCalBtn').disabled=true;$('refPill').classList.add('hidden');$('refRgb').textContent='—';$('gainTxt').textContent='—';
+}
+function renderHistory(){
+  let h=getHistory(), q=($('searchHistory')?.value||'').toLowerCase(),age=$('filterAge')?.value||'',cal=$('filterCal')?.value||'';
+  h=h.filter(x=>(!q||[x.caseId,x.file,x.bodySite,x.notes].join(' ').toLowerCase().includes(q))&&(!age||x.age===age)&&(!cal||(cal==='yes')===!!x.calibrated));
+  $('historyBody').innerHTML=h.length?h.map(x=>`<tr><td>${new Date(x.date).toLocaleString()}</td><td><b>${esc(x.caseId)}</b></td><td>${esc(x.file)}</td><td>${esc(x.bodySite)}</td><td>${(x.colors||[]).map(c=>`<span class="color-dot" style="background:${c}" title="${c}"></span>`).join('')}</td><td><span class="badge info">${esc(x.age)}</span></td><td>${x.calibrated?'<span class="badge ok">Calibrated</span>':'<span class="badge warn">Raw</span>'}</td><td><button class="btn secondary" onclick="deleteHistory('${x.id}')">Delete</button></td></tr>`).join(''):`<tr><td colspan="8" class="muted">No matching records.</td></tr>`;
+}
+function deleteHistory(id){if(confirm('Delete this history record?')){setHistory(getHistory().filter(x=>x.id!==id));renderHistory();refreshDashboard()}}
+function refreshDashboard(){
+  const h=getHistory(), now=new Date();$('kpiTotal').textContent=h.length;$('kpiCal').textContent=h.filter(x=>x.calibrated).length;$('kpiMonth').textContent=h.filter(x=>{let d=new Date(x.date);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()}).length;$('kpiLast').textContent=h[0]?.age||'—';
+  $('recentList').innerHTML=h.length?h.slice(0,5).map(x=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #edf0f2"><div><b>${esc(x.caseId)}</b><div class="small">${esc(x.file)} • ${esc(x.bodySite)}</div></div><span class="badge info">${esc(x.age)}</span></div>`).join(''):'No analyses yet.';
+}
+function exportCsv(){
+  const rows=[['Date','Case ID','Image','Body site','Estimated age','Calibrated'],...getHistory().map(x=>[x.date,x.caseId,x.file,x.bodySite,x.age,x.calibrated?'Yes':'No'])];
+  const csv=rows.map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n'),blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bruise_analysis_history.csv';a.click();URL.revokeObjectURL(a.href);
+}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+if(localStorage.getItem(KEY_S)==='1')enterApp();
+</script>
+</body>
+</html>

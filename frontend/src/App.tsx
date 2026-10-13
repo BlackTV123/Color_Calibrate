@@ -222,7 +222,7 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const histCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [refPixel, setRefPixel] = useState<[number, number, number] | null>(null);
-  const [gainText, setGainText] = useState<string>('—');
+  const [_gainText, setGainText] = useState<string>('—');
   const [isManualCalibrated, setIsManualCalibrated] = useState(false);
   const originalImageDataRef = useRef<ImageData | null>(null);
   const workingImageDataRef = useRef<ImageData | null>(null);
@@ -469,7 +469,7 @@ export default function App() {
     setRefPixel(p);
   }
 
-  function applyNeutralCalibration() {
+  function _applyNeutralCalibration() {
     if (!refPixel || !originalImageDataRef.current || !canvasRef.current) return;
     const target = 235;
     const gains = refPixel.map(v => Math.min(3, target / Math.max(v, 1)));
@@ -490,7 +490,7 @@ export default function App() {
     setIsManualCalibrated(true);
   }
 
-  function resetNeutralCalibration() {
+  function _resetNeutralCalibration() {
     if (!originalImageDataRef.current || !canvasRef.current) return;
     workingImageDataRef.current = new ImageData(
       new Uint8ClampedArray(originalImageDataRef.current.data),
@@ -1737,7 +1737,7 @@ export default function App() {
                         />
                       </div>
                       <div>
-                        <label>Email Account (อีเมลบัญชีผู้ใช้ — ล็อกอัตโนมัติ)</label>
+                        <label>Email Account (LOCK)</label>
                         <input
                           type="email"
                           className="input"

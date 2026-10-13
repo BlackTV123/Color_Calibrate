@@ -4,8 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n BE,FE -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "vite",
+    "dev:backend": "set DATABASE_URL=mysql://root:Pai123456789@127.0.0.1:3306/bruise_db && ..\\backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --port 8000 --host 127.0.0.1 --reload --app-dir ../backend",
     "build": "tsc -b && vite build",
+    "build:prod": "tsc -b && vite build && xcopy dist ..\\backend\\static /E /I /Y",
+    "prod": "npm run build:prod && set DATABASE_URL=mysql://root:Pai123456789@127.0.0.1:3306/bruise_db && ..\\backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --port 8000 --host 127.0.0.1 --app-dir ../backend",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -16,6 +20,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^10.0.6",
     "typescript": "^5.5.3",
     "vite": "^5.4.1"
   }

@@ -289,15 +289,16 @@ python -m venv .venv
 # 3. ติดตั้ง Dependencies
 pip install -r requirements.txt
 
-# 4. ตั้งค่าไฟล์ .env (แก้ไขรหัสผ่าน MySQL ให้ตรงกับเครื่องของคุณ)
-# ตัวอย่าง: DATABASE_URL="mysql://root:Pai123456789@127.0.0.1:3306/bruise_db"
+# 4. สร้าง .env ครั้งแรกหลัง clone แล้วกรอกข้อมูล MySQL ของเครื่องนี้
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+# .env ถูก Git ignore อยู่แล้ว จึงไม่ถูก git pull ทับ และไม่ต้องแก้ package.json
 
 # 5. สั่งสร้าง Prisma Client และซิงค์โครงสร้างตารางสู่ MySQL
 prisma py generate
 prisma db push
 
 # 6. เริ่มต้นรันเซิร์ฟเวอร์ Backend
-uvicorn app.main:app --port 8000 --host 127.0.0.1 --reload
+uvicorn app.main:app --env-file .env --port 8000 --host 127.0.0.1 --reload
 ```
 
 ### 3. ติดตั้งและรัน Frontend
@@ -315,13 +316,12 @@ npm run dev
 
 ### 4. การ Build Frontend เพื่อให้ Backend เสิร์ฟแบบ All-in-One
 ```powershell
-# ในโฟลเดอร์ frontend
-npm run build
+# ในโฟลเดอร์ frontend: build, คัดลอก static และเริ่ม backend อัตโนมัติ
+npm run prod
 
-# คัดลอกผลลัพธ์โฟลเดอร์ dist ไปยัง backend/static
-Copy-Item -Path "dist\*" -Destination "..\backend\static" -Recurse -Force
-
-# สามารถเปิดเข้าใช้งานระบบทั้งหมดได้โดยตรงที่: http://127.0.0.1:8000/
+# อ่านค่าจาก backend/.env โดยไม่ต้องแก้ package.json
+# ถ้าอยู่โฟลเดอร์โปรเจกต์หลัก ใช้: npm --prefix frontend run prod
+# เปิด http://127.0.0.1:8000/
 ```
 
 ---

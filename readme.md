@@ -303,15 +303,17 @@ python -m venv .venv
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Configure database connection in backend/.env
-# Example: DATABASE_URL="mysql://root:YourPassword@127.0.0.1:3306/bruise_db"
+# Create the local config once after cloning, then edit .env for your MySQL server
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+# .env is ignored by Git; existing files survive git pull.
+# Do not change frontend/package.json to configure database credentials.
 
 # Generate Prisma Client and synchronize schema with MySQL
 prisma py generate
 prisma db push
 
 # Start FastAPI development server
-uvicorn app.main:app --port 8000 --host 127.0.0.1 --reload
+uvicorn app.main:app --env-file .env --port 8000 --host 127.0.0.1 --reload
 ```
 
 ### 2. Frontend Setup
@@ -329,13 +331,12 @@ npm run dev
 
 ### 3. Production Build (Single-Port Hosting)
 ```powershell
-# In frontend directory
-npm run build
+# In frontend directory: build, copy static assets, and start FastAPI
+npm run prod
 
-# Copy production bundle to backend static directory
-Copy-Item -Path "dist\*" -Destination "..\backend\static" -Recurse -Force
-
-# The entire full-stack application is now served unified at: http://127.0.0.1:8000/
+# Reads backend/.env automatically; keep the existing file after git pull.
+# From the repository root: npm --prefix frontend run prod
+# Open http://127.0.0.1:8000/
 ```
 
 ---

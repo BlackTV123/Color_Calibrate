@@ -102,6 +102,24 @@ def compute_histograms(raw_pixels: np.ndarray | None,
     return out
 
 
+
+def serialize_measured_colours(table: pd.DataFrame | None) -> list[dict]:
+    """Expose the measured cluster colours without replacing palette matches."""
+    if table is None or not isinstance(table, pd.DataFrame):
+        return []
+    return to_json_safe([
+        {
+            "name": row.get('ชื่อสีที่พบ', ''),
+            "hex": row.get('HEX', ''),
+            "rgb": list(row.get('RGB ที่พบ', ())),
+            "percent": row.get('เปอร์เซ็นต์', 0),
+            "scale_match": row.get('ผลเทียบสเกล', ''),
+            "de00": row.get('ΔE00 ถึงสเกล'),
+        }
+        for _, row in table.iterrows()
+    ])
+
+
 def build_response(result: dict) -> dict:
     """Transforms raw pipeline dictionary into a clean, typed JSON-ready API response."""
     cal = result.get('calibration', {})
@@ -189,6 +207,10 @@ def build_response(result: dict) -> dict:
             "mean_rgb": mean_rgb,
             "mean_lightness": mean_lightness,
             "dominant_colors": dominant_colors
+        },
+        "measured_colours": {
+            "skin": serialize_measured_colours(result.get('skin_measured_colours')),
+            "wound": serialize_measured_colours(result.get('wound_measured_colours')),
         },
         "wound_size": {
             "status": wound_sz.get('status', ''),

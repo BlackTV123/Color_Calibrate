@@ -787,3 +787,30 @@ hr {
 }
 
 
+
+/* Keep the selected case visible, fully expanded, and paginated when printing. */
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body:has(.case-report) { background: #fff !important; color: #000 !important; }
+  body:has(.case-report) .app-view { display: block !important; min-height: 0 !important; }
+  body:has(.case-report) .app-view > :not(.modal-backdrop) { display: none !important; }
+  .modal-backdrop:has(.case-report) { display: block !important; position: static !important; padding: 0 !important; overflow: visible !important; background: none !important; }
+  .case-report.modal-dialog { display: block; width: 100%; max-width: none; max-height: none; overflow: visible; box-shadow: none; border: 0; animation: none; transform: none; }
+  .case-report .modal-body { display: block; padding: 10px 0; overflow: visible; }
+  .case-report .modal-header { padding: 0 0 12px; background: white; }
+  .case-report button, .case-report .modal-footer { display: none !important; }
+  .case-report .card, .case-report .metric, .case-report figure { break-inside: avoid; box-shadow: none; }
+  .case-report .case-preview-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .case-report .case-preview-card .img-wrap { height: 140px; background: white; }
+  .case-report .grid.g4 { grid-template-columns: repeat(2, 1fr); }
+  .case-report .grid.g2 { grid-template-columns: 1fr; }
+  .case-report .histogram-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .case-report .tbl-wrap { overflow: visible !important; max-height: none !important; }
+  .case-report .measured-table { break-inside: auto; }
+  .case-report .measured-table summary { display: none; }
+  .case-report details > :not(summary) { display: block !important; }
+  .case-report table { width: 100%; font-size: 9px; }
+  .case-report thead { display: table-header-group; }
+  .case-report tr { break-inside: avoid; }
+  .case-report .measured-chip, .case-report .color-dot, .case-report svg { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}

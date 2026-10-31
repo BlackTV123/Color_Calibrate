@@ -58,7 +58,7 @@ def analyse_photo_auto_bytes(payload: bytes, filename: str = "image") -> dict:
         'crop_box': card_crop_box(photo.shape, card, wound_box)
     }
 
-    if wound_box is not None and lesion_mask.sum() >= 200 and fraction >= 0.02:
+    if wound_box is not None:
         original_pixels, pixels = paired_pixels(photo, corrected, lesion_mask)
         out['wound_original_pixels'] = original_pixels
         out['wound_pixels'] = pixels

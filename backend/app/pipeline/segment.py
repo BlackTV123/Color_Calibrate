@@ -146,8 +146,9 @@ def skin_region_proposal(raw: np.ndarray, excluded: np.ndarray) -> Tuple[np.ndar
 
 def bruise_region_proposal(rgb: np.ndarray, support: np.ndarray,
                            skin_inner: np.ndarray, body: np.ndarray, excluded: np.ndarray) -> np.ndarray:
+    'Find a bruise seed, grow nearby changed colors, and fill safe internal gaps.'
     sh, sw = rgb.shape[:2]
-    lab = rgb2lab(rgb / 255.0)
+    lab = rgb2lab(rgb / 255)
     local = cv2.GaussianBlur(lab.astype(np.float32), (0, 0), sigmaX=18)
     local_de = deltaE_ciede2000(lab, local)
     local_chroma = np.linalg.norm(lab[..., 1:] - local[..., 1:], axis=2)
@@ -157,47 +158,56 @@ def bruise_region_proposal(rgb: np.ndarray, support: np.ndarray,
     margin = skin_de - bruise_de
     normal_lab = np.median(lab[skin_inner], axis=0)
     relative_de = deltaE_ciede2000(lab, np.broadcast_to(normal_lab, lab.shape))
-    purple_shift = ((normal_lab[2] - lab[..., 2] > 10) & (lab[..., 1] > 8) &
-                    (rgb[..., 2] >= 0.83 * rgb[..., 1]))
-    red_shift = ((lab[..., 1] - normal_lab[1] > 14) & (lab[..., 1] > 25) &
-                 (rgb[..., 2] >= 0.80 * rgb[..., 1]))
+    purple_shift = (normal_lab[2] - lab[..., 2] > 10) & (lab[..., 1] > 8) & (rgb[..., 2] >= 0.83 * rgb[..., 1])
+    red_shift = (lab[..., 1] - normal_lab[1] > 14) & (lab[..., 1] > 25) & (rgb[..., 2] >= 0.8 * rgb[..., 1])
     skin_anomaly = (relative_de > 18) & (normal_lab[0] - lab[..., 0] > 12) & (purple_shift | red_shift)
     exposure = (rgb.max(axis=2) > 8) & (rgb.max(axis=2) < 251)
-    palette_match = ((bruise_de < 16) &
-                     ((margin > 7) | ((margin > 5) & (local_de > 8) & (local_chroma > 6))))
+    palette_match = (bruise_de < 16) & ((margin > 7) | (margin > 5) & (local_de > 8) & (local_chroma > 6))
     candidate = support & exposure & (palette_match | skin_anomaly)
-    candidate = cv2.morphologyEx(candidate.astype(np.uint8), cv2.MORPH_OPEN,
-                               cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
-    candidate = cv2.morphologyEx(candidate, cv2.MORPH_CLOSE,
-                               cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+    candidate = cv2.morphologyEx(candidate.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
+    candidate = cv2.morphologyEx(candidate, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
     n, parts, regions, _ = cv2.connectedComponentsWithStats(candidate, 8)
     lesion = np.zeros((sh, sw), bool)
-    minimum = max(150, int(support.sum() * 0.002))
-    if n > 1:
-        k = 1 + int(np.argmax(regions[1:, cv2.CC_STAT_AREA]))
-        if regions[k, cv2.CC_STAT_AREA] >= minimum:
-            lesion = parts == k
+    small_min = max(40, int(support.sum() * 0.00015))
+    fallback_min = max(150, int(support.sum() * 0.002))
+    border = max(3, int(round(0.01 * min(sh, sw))))
+    palette_choices = []
+    anomaly_choices = []
+    for part_id in range(1, n):
+        x, y, bw, bh, area = regions[part_id]
+        if area < small_min or area > 0.12 * support.sum():
+            continue
+        if x <= border or y <= border or x + bw >= sw - border or (y + bh >= sh - border):
+            continue
+        region = parts == part_id
+        palette_pixels = int(np.count_nonzero(palette_match & region))
+        palette_fraction = palette_pixels / max(1, int(area))
+        anomaly_fraction = float(np.mean(skin_anomaly[region]))
+        if palette_pixels >= 20 and palette_fraction >= 0.12:
+            palette_choices.append((palette_pixels, float(palette_fraction), int(area), part_id))
+        elif area >= fallback_min and anomaly_fraction >= 0.5:
+            anomaly_choices.append((int(area), float(anomaly_fraction), part_id))
+    if palette_choices:
+        k = max(palette_choices, key=lambda row: (row[0], row[1]))[3]
+        lesion = parts == k
+    elif anomaly_choices:
+        k = max(anomaly_choices, key=lambda row: (row[0], row[1]))[2]
+        lesion = parts == k
     if not lesion.any():
         return lesion
-
     seed = lesion.copy()
     bw = regions[k, cv2.CC_STAT_WIDTH]
     bh = regions[k, cv2.CC_STAT_HEIGHT]
-    radius = max(12, min(32, int(round(0.50 * min(bw, bh)))))
-    near = cv2.dilate(seed.astype(np.uint8),
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))).astype(bool)
-    outer = cv2.dilate(seed.astype(np.uint8),
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (4 * radius + 1, 4 * radius + 1))).astype(bool)
+    radius = max(24, min(36, int(round(0.55 * max(bw, bh)))))
+    near = cv2.dilate(seed.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))).astype(bool)
+    outer = cv2.dilate(seed.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (4 * radius + 1, 4 * radius + 1))).astype(bool)
     ring = outer & ~near & skin_inner
     normal = np.median(lab[ring], axis=0) if ring.sum() >= 400 else normal_lab
     edge_de = deltaE_ciede2000(lab, np.broadcast_to(normal, lab.shape))
-    edge_colour = ((normal[1] - lab[..., 1] > 6) | (normal[2] - lab[..., 2] > 8))
-    body_near = cv2.dilate(body.astype(np.uint8),
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))).astype(bool)
-    grown = (near & body_near & (excluded == 0) & (lab[..., 1] > 5) &
-             (edge_de > 8) & edge_colour) | seed
-    grown = cv2.morphologyEx(grown.astype(np.uint8), cv2.MORPH_CLOSE,
-                           cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11)))
+    edge_colour = (normal[1] - lab[..., 1] > 5) | (normal[2] - lab[..., 2] > 7) | (lab[..., 1] - normal[1] > 3)
+    body_near = cv2.dilate(body.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))).astype(bool)
+    grown = near & body_near & (excluded == 0) & (lab[..., 1] > 5) & (edge_de > 5) & edge_colour | seed
+    grown = cv2.morphologyEx(grown.astype(np.uint8), cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11)))
     total, parts, _, _ = cv2.connectedComponentsWithStats(grown, 8)
     core_overlap = np.bincount(parts[seed], minlength=total)
     core_overlap[0] = 0
@@ -217,16 +227,40 @@ def bruise_region_proposal(rgb: np.ndarray, support: np.ndarray,
 
 def auto_skin_and_wound(photo: np.ndarray, corrected: np.ndarray,
                         card_H: np.ndarray | None = None, marker_card: bool = False):
+    'Run the automatic skin and bruise detector and return full-resolution masks.'
     h, w = photo.shape[:2]
-    scale = 720.0 / max(h, w)
-    sw, sh = max(40, round(w * scale)), max(40, round(h * scale))
+    scale = 720 / max(h, w)
+    sw, sh = (max(40, round(w * scale)), max(40, round(h * scale)))
     raw = cv2.resize(photo, (sw, sh))
     rgb = cv2.resize(corrected, (sw, sh))
     excluded = card_exclusion_mask(photo.shape, raw.shape, card_H, marker_card)
     skin_inner, support, body = skin_region_proposal(raw, excluded)
     lesion = bruise_region_proposal(rgb, support, skin_inner, body, excluded)
-    skin_inner = body & ~cv2.dilate(lesion.astype(np.uint8),
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))).astype(bool)
+    wound_guard = lesion.astype(bool)
+    if lesion.any():
+        ys, xs = np.where(lesion)
+        lesion_span = max(int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1))
+        sample_radius = max(55, min(150, int(round(1.35 * lesion_span))))
+        near = cv2.dilate(lesion.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * sample_radius + 1, 2 * sample_radius + 1))).astype(bool)
+        seed = skin_inner & near & ~cv2.dilate(lesion.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))).astype(bool)
+        raw_lab = rgb2lab(raw / 255)
+        normal = np.median(raw_lab[seed], axis=0) if seed.sum() >= 400 else np.median(raw_lab[skin_inner], axis=0)
+        skin_de = deltaE_ciede2000(raw_lab, np.broadcast_to(normal, raw_lab.shape))
+        grown_skin = body & ~wound_guard & (excluded == 0) & (skin_de < 20)
+        grown_skin = cv2.morphologyEx(grown_skin.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31)))
+        grown_skin = cv2.morphologyEx(grown_skin, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21)))
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(grown_skin, 8)
+        anchor = cv2.dilate(lesion.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (51, 51))).astype(bool) & ~wound_guard
+        overlap = np.bincount(labels[anchor], minlength=count) if count > 1 else np.zeros(count, dtype=int)
+        if len(overlap):
+            overlap[0] = 0
+        components = np.where((overlap >= 20) & (stats[:, cv2.CC_STAT_AREA] >= 800))[0] if count > 1 else np.array([], dtype=int)
+        if len(components):
+            skin_inner = np.isin(labels, components)
+        else:
+            skin_inner = body & near & ~wound_guard
+    else:
+        skin_inner = skin_inner & ~wound_guard
     skin_full = cv2.resize(skin_inner.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
     lesion_full = cv2.resize(lesion.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
     skin_before, skin_pixels = paired_pixels(photo, corrected, skin_full)
@@ -236,8 +270,7 @@ def auto_skin_and_wound(photo: np.ndarray, corrected: np.ndarray,
     if lesion_full.any():
         ys, xs = np.where(lesion_full)
         wound_box = (int(xs.min()), int(ys.min()), int(xs.max() + 1), int(ys.max() + 1))
-    return (skin_before, skin_pixels, skin_box, skin_full, lesion_full, wound_box,
-            float(lesion.sum() / max(1, support.sum())))
+    return (skin_before, skin_pixels, skin_box, skin_full, lesion_full, wound_box, float(lesion.sum() / max(1, support.sum())))
 
 
 def card_crop_box(shape: Tuple[int, ...], card: dict | None, wound_box: Tuple[int, int, int, int] | None = None) -> Tuple[int, int, int, int]:

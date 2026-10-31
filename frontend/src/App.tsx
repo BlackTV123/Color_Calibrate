@@ -1,21 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-
-interface HistoryItem {
-  id: string;
-  date: string;
-  caseId: string;
-  file: string;
-  bodySite: string;
-  notes?: string;
-  age: string;
-  calibrated: boolean;
-  colors: string[];
-  thumbnail?: string | null;
-  confidence?: number;
-  deltaE00?: number;
-  surfaceAreaMm2?: number;
-  resultJson?: AnalysisResult | null;
-}
+import AnalysisDetails, { type MeasuredColour } from './AnalysisDetails';
+import { HistoryAuthenticationError, type HistoryItem, nextCaseId, mapHistoryRecord, mergeHistory, readHistoryCache, persistHistoryCache, sendHistoryRecord, deleteHistoryRecord } from './history';
 
 interface UserProfile {
   name: string;
@@ -23,7 +8,7 @@ interface UserProfile {
   note: string;
 }
 
-interface AnalysisResult {
+export interface AnalysisResult {
   filename: string;
   has_wound: boolean;
   detection_note: string;
@@ -60,6 +45,7 @@ interface AnalysisResult {
       median_de00?: number | null;
     }>;
   };
+  measured_colours?: { skin: MeasuredColour[]; wound: MeasuredColour[] };
   wound_size?: {
     status: string;
     width_cm?: number | null;
@@ -98,7 +84,10 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => localStorage.getItem(KEY_S) === '1');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(() => Boolean(localStorage.getItem(KEY_TOKEN) || localStorage.getItem(KEY_S)));
+  const [sessionVersion, setSessionVersion] = useState(0);
+  const verifiedTokenRef = useRef<string | null>(null);
   const [authMode, setAuthMode] = useState<'signin' | 'register'>('signin');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -125,80 +114,191 @@ export default function App() {
     };
   });
 
-  const [history, setHistory] = useState<HistoryItem[]>(() => {
-    const saved = localStorage.getItem(`bcc_history_${profile.email}`);
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [busyRecord, setBusyRecord] = useState<string | null>(null);
+  const [cacheReady, setCacheReady] = useState('');
+  const historyRef = useRef<HistoryItem[]>([]);
+  const historyRevisionRef = useRef(0);
+  const refreshIdRef = useRef(0);
+  const remoteLoadedRef = useRef<string | null>(null);
+  const saveInFlightRef = useRef(false);
+  const recordBusyRef = useRef(false);
 
-  // Check backend health & MySQL status, load records from MySQL for specific user
-  async function refreshFromDatabase(targetEmail?: string) {
-    try {
-      const healthRes = await fetch('/api/health');
-      if (healthRes.ok) {
-        const healthData = await healthRes.json();
-        setDbStatus(healthData.database === 'connected' ? 'connected' : 'offline');
-      } else {
-        setDbStatus('offline');
-      }
+  function updateHistory(updater: (current: HistoryItem[]) => HistoryItem[]) {
+    const next = updater(historyRef.current);
+    historyRef.current = next;
+    setHistory(next);
+  }
 
-      const activeEmail = (targetEmail || profile.email || 'demo@bruise.local').trim().toLowerCase();
+  function resetSessionView() {
+    verifiedTokenRef.current = null;
+    setIsAuthenticated(false);
+    updateHistory(() => []);
+    remoteLoadedRef.current = null;
+    refreshIdRef.current++;
+    historyRevisionRef.current++;
+    setCacheReady('');
+    setHistoryError(null);
+    setSelectedCase(null);
+    setSaveToast(null);
+    clearAnalysisForm();
+  }
 
-      // Fetch persistent records from MySQL via Prisma for THIS user only
-      const recRes = await fetch(`/api/records?userEmail=${encodeURIComponent(activeEmail)}`, {
-        headers: getAuthHeaders()
-      });
-      if (recRes.ok) {
-        const data = await recRes.json();
-        if (data.records && Array.isArray(data.records)) {
-          const mapped: HistoryItem[] = data.records.map((r: any) => ({
-            id: String(r.id),
-            date: r.createdAt || new Date().toISOString(),
-            caseId: r.patientId || `CASE-${r.id}`,
-            file: r.imageFilename || 'image.jpg',
-            bodySite: r.woundLocation || 'Unspecified',
-            notes: r.summary || '',
-            age: r.estimatedAge || 'N/A',
-            calibrated: (r.deltaE00 || 0) > 0,
-            colors: r.dominantHex ? [r.dominantHex] : ['#A72C32'],
-            thumbnail: r.thumbnail || r.resultJson?.previews?.overlay || r.resultJson?.previews?.calibrated || r.resultJson?.previews?.original || null,
-            confidence: r.confidence,
-            deltaE00: r.deltaE00,
-            surfaceAreaMm2: r.surfaceAreaMm2,
-            resultJson: r.resultJson
-          }));
-          setHistory(mapped);
-          localStorage.setItem(`bcc_history_${activeEmail}`, JSON.stringify(mapped));
-        }
-      }
-
-      // Fetch profile from MySQL
-      const profRes = await fetch(`/api/profile?email=${encodeURIComponent(activeEmail)}`, {
-        headers: getAuthHeaders()
-      });
-      if (profRes.ok) {
-        const pData = await profRes.json();
-        if (pData.name) {
-          setProfile(prev => ({
-            ...prev,
-            name: pData.name,
-            email: pData.email || prev.email
-          }));
-        }
-      }
-    } catch (e) {
-      console.warn('Could not connect to MySQL backend, running offline mode:', e);
-      setDbStatus('offline');
-    }
+  function expireSession(token: string, message = 'เซสชันหมดอายุหรือยืนยันตัวตนไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่') {
+    if ((localStorage.getItem(KEY_TOKEN) || '') !== token) return;
+    localStorage.removeItem(KEY_S);
+    localStorage.removeItem(KEY_TOKEN);
+    resetSessionView();
+    setIsCheckingSession(false);
+    setAuthMode('signin');
+    setLoginEmail(profile.email);
+    setLoginError(message);
   }
 
   useEffect(() => {
-    refreshFromDatabase();
+    const token = localStorage.getItem(KEY_TOKEN) || '';
+    const hadSession = localStorage.getItem(KEY_S) === '1';
+    if (!token) {
+      localStorage.removeItem(KEY_S);
+      setIsCheckingSession(false);
+      if (hadSession) setLoginError('กรุณาเข้าสู่ระบบใหม่เพื่อยืนยันตัวตน');
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setIsCheckingSession(true);
+    async function restoreSession() {
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
+        });
+        if (cancelled || token !== localStorage.getItem(KEY_TOKEN)) return;
+        if (response.status === 401) { expireSession(token); return; }
+        if (!response.ok) throw new Error('ตรวจสอบการเข้าสู่ระบบไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง');
+        const data = await response.json();
+        if (cancelled || token !== localStorage.getItem(KEY_TOKEN)) return;
+        const email = typeof data.user?.email === 'string' ? data.user.email.trim().toLowerCase() : '';
+        if (!email || data.success !== true) { expireSession(token); return; }
+        const restored: UserProfile = {
+          email, name: data.user.name || (profile.email.toLowerCase() === email ? profile.name : 'Clinician'),
+          note: profile.email.toLowerCase() === email ? profile.note : '',
+        };
+        verifiedTokenRef.current = token;
+        localStorage.setItem(KEY_P, JSON.stringify(restored));
+        localStorage.setItem(KEY_S, '1');
+        setProfile(restored);
+        setIsAuthenticated(true);
+      } catch (error) {
+        if (!cancelled && token === localStorage.getItem(KEY_TOKEN)) {
+          setLoginEmail(profile.email);
+          setLoginError(error instanceof Error ? error.message : 'ตรวจสอบการเข้าสู่ระบบไม่สำเร็จ');
+        }
+      } finally {
+        if (!cancelled && token === localStorage.getItem(KEY_TOKEN)) setIsCheckingSession(false);
+      }
+    }
+    restoreSession();
+    return () => { cancelled = true; controller.abort(); };
+  }, [sessionVersion]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== KEY_TOKEN && event.key !== null) return;
+      resetSessionView();
+      setIsCheckingSession(Boolean(localStorage.getItem(KEY_TOKEN)));
+      setSessionVersion(value => value + 1);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
+
+  useEffect(() => {
+    const email = profile.email.trim().toLowerCase();
+    const token = localStorage.getItem(KEY_TOKEN);
+    if (!isAuthenticated || !email || !token || verifiedTokenRef.current !== token) return;
+    let cancelled = false;
+    readHistoryCache(email).then(cached => {
+      if (cancelled || token !== localStorage.getItem(KEY_TOKEN)) return;
+      updateHistory(current => remoteLoadedRef.current === token || current.length
+        ? mergeHistory(current, cached) : cached);
+      setCacheReady(`${token}|${email}`);
+    });
+    return () => { cancelled = true; };
+  }, [isAuthenticated, profile.email]);
+
+  useEffect(() => {
+    const email = profile.email.trim().toLowerCase();
+    const token = localStorage.getItem(KEY_TOKEN);
+    if (!isAuthenticated || !email || !token || verifiedTokenRef.current !== token || cacheReady !== `${token}|${email}`) return;
+    persistHistoryCache(email, history).catch(() => {
+      if (token === localStorage.getItem(KEY_TOKEN) && history.some(row => row.syncStatus === 'pending')) {
+        setHistoryError('เก็บรายการรอซิงก์ในเครื่องไม่สำเร็จ กรุณาอย่าปิดหน้านี้จนกว่าจะบันทึก MySQL สำเร็จ');
+      }
+    });
+  }, [history, profile.email, isAuthenticated, cacheReady]);
+
+  useEffect(() => {
+    if (!selectedCase) return;
+    const expanded = new Map<HTMLDetailsElement, boolean>();
+    const beforePrint = () => {
+      document.querySelectorAll<HTMLDetailsElement>('.case-report details').forEach(element => {
+        expanded.set(element, element.open);
+        element.open = true;
+      });
+    };
+    const afterPrint = () => { expanded.forEach((open, element) => { element.open = open; }); expanded.clear(); };
+    window.addEventListener('beforeprint', beforePrint);
+    window.addEventListener('afterprint', afterPrint);
+    return () => {
+      afterPrint();
+      window.removeEventListener('beforeprint', beforePrint);
+      window.removeEventListener('afterprint', afterPrint);
+    };
+  }, [selectedCase]);
+
+  // Check backend health & MySQL status, load records from MySQL for specific user
+  async function refreshFromDatabase(targetEmail?: string) {
+    const activeEmail = (targetEmail || profile.email).trim().toLowerCase();
+    const token = localStorage.getItem(KEY_TOKEN);
+    const requestId = ++refreshIdRef.current;
+    const revision = historyRevisionRef.current;
+    const currentSession = () => token === localStorage.getItem(KEY_TOKEN) && token === verifiedTokenRef.current && requestId === refreshIdRef.current;
+    if (!token || verifiedTokenRef.current !== token) return;
+    try {
+      const healthRes = await fetch('/api/health');
+      if (currentSession()) {
+        const health = healthRes.ok ? await healthRes.json() : null;
+        setDbStatus(health?.database === 'connected' ? 'connected' : 'offline');
+      }
+      if (!activeEmail || !token) return;
+      const records: HistoryItem[] = [];
+      let offset = 0;
+      while (true) {
+        const res = await fetch(`/api/records?limit=500&offset=${offset}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!currentSession()) return;
+        if (res.status === 401) { expireSession(token); return; }
+        if (!res.ok) throw new Error('โหลดประวัติจาก MySQL ไม่สำเร็จ ข้อมูลในเครื่องยังอยู่');
+        const data = await res.json();
+        if (!Array.isArray(data.records)) throw new Error('ข้อมูลประวัติจากเซิร์ฟเวอร์ไม่ถูกต้อง');
+        records.push(...data.records.map(mapHistoryRecord));
+        offset += data.records.length;
+        if (!data.records.length || offset >= data.total) break;
+      }
+      if (!currentSession() || revision !== historyRevisionRef.current) return;
+      remoteLoadedRef.current = token;
+      updateHistory(current => mergeHistory(records, current));
+      setHistoryError(null);
+    } catch (error) {
+      if (currentSession()) setHistoryError(error instanceof Error ? error.message : 'โหลดประวัติไม่สำเร็จ');
+    }
+  }
 
   // Auto-refresh history and database health every 20 seconds when logged in
   useEffect(() => {
     if (!isAuthenticated || !profile.email) return;
 
+    refreshFromDatabase(profile.email);
     const interval = setInterval(() => {
       refreshFromDatabase(profile.email);
     }, 20000);
@@ -209,7 +309,8 @@ export default function App() {
   // Analysis form states
   const [file, setFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [caseId, setCaseId] = useState('');
+  const [caseId, setCaseId] = useState('Case001');
+  const caseIdEditedRef = useRef(false);
   const [bodySite, setBodySite] = useState('');
   const [notes, setNotes] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -218,9 +319,12 @@ export default function App() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [saveToast, setSaveToast] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!caseIdEditedRef.current && !isSavingDb) setCaseId(nextCaseId(history));
+  }, [history, isSavingDb]);
+
   // Canvas & manual calibration states
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const histCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [refPixel, setRefPixel] = useState<[number, number, number] | null>(null);
   const [_gainText, setGainText] = useState<string>('—');
   const [isManualCalibrated, setIsManualCalibrated] = useState(false);
@@ -242,18 +346,14 @@ export default function App() {
       const ctx = c.getContext('2d');
       if (ctx) ctx.clearRect(0, 0, c.width, c.height);
     }
-    const hc = histCanvasRef.current;
-    if (hc) {
-      const hctx = hc.getContext('2d');
-      if (hctx) hctx.clearRect(0, 0, hc.width, hc.height);
-    }
     const fileInput = document.getElementById('imageFileInput') as HTMLInputElement | null;
     if (fileInput) fileInput.value = '';
   }
 
   function clearAnalysisForm() {
     removeImage();
-    setCaseId('');
+    caseIdEditedRef.current = false;
+    setCaseId(nextCaseId(historyRef.current));
     setBodySite('');
     setNotes('');
   }
@@ -262,13 +362,6 @@ export default function App() {
   const [searchHistory, setSearchHistory] = useState('');
   const [filterAge, setFilterAge] = useState('');
   const [filterCal, setFilterCal] = useState('');
-
-  // Persist history changes per user
-  useEffect(() => {
-    if (profile?.email) {
-      localStorage.setItem(`bcc_history_${profile.email.trim().toLowerCase()}`, JSON.stringify(history));
-    }
-  }, [history, profile.email]);
 
   // Clear any active uploaded image and form whenever user account changes
   useEffect(() => {
@@ -293,10 +386,11 @@ export default function App() {
 
       if (res.ok) {
         const data = await res.json();
+        if (!data.access_token) throw new Error('Server did not return a login token');
         localStorage.setItem(KEY_S, '1');
-        if (data.access_token) {
-          localStorage.setItem(KEY_TOKEN, data.access_token);
-        }
+        localStorage.setItem(KEY_TOKEN, data.access_token);
+        verifiedTokenRef.current = data.access_token;
+        setIsCheckingSession(false);
         const userEmail = (data.user?.email || loginEmail).trim().toLowerCase();
         if (data.user) {
           const u: UserProfile = {
@@ -309,15 +403,12 @@ export default function App() {
         }
 
         // Clear previous user's history and active uploaded image from UI immediately
-        setHistory([]);
+        updateHistory(() => []);
+        remoteLoadedRef.current = null;
+        refreshIdRef.current++;
+        setHistoryError(null);
         setSelectedCase(null);
         clearAnalysisForm();
-
-        // Load cached records for this specific user if any
-        const cached = localStorage.getItem(`bcc_history_${userEmail}`);
-        if (cached) {
-          try { setHistory(JSON.parse(cached)); } catch (e) { }
-        }
 
         setIsAuthenticated(true);
         setCurrentPage('dashboard');
@@ -379,14 +470,14 @@ export default function App() {
   function handleLogout() {
     localStorage.removeItem(KEY_S);
     localStorage.removeItem(KEY_TOKEN);
-    setIsAuthenticated(false);
-    setHistory([]);
-    setSelectedCase(null);
-    clearAnalysisForm();
+    resetSessionView();
+    setIsCheckingSession(false);
+    setLoginError('');
   }
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
+    const token = localStorage.getItem(KEY_TOKEN) || '';
     localStorage.setItem(KEY_P, JSON.stringify(profile));
 
     try {
@@ -401,6 +492,7 @@ export default function App() {
           email: profile.email
         })
       });
+      if (res.status === 401) { expireSession(token); return; }
       if (res.ok) {
         alert('บันทึกข้อมูลส่วนตัวลงใน MySQL เรียบร้อยแล้ว');
         return;
@@ -503,55 +595,7 @@ export default function App() {
     setGainText('—');
   }
 
-  // Draw RGB histogram
-  function drawHistogram(histData: { r: number[]; g: number[]; b: number[] }) {
-    const c = histCanvasRef.current;
-    if (!c) return;
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
-
-    const w = c.width;
-    const h = c.height;
-    const pad = 36;
-    ctx.clearRect(0, 0, w, h);
-
-    // Axes
-    ctx.strokeStyle = '#d9e0e7';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(pad, 10);
-    ctx.lineTo(pad, h - pad);
-    ctx.lineTo(w - 10, h - pad);
-    ctx.stroke();
-
-    const maxVal = Math.max(...histData.r, ...histData.g, ...histData.b, 1);
-    const channels = [
-      { arr: histData.r, color: '#b43c4c' },
-      { arr: histData.g, color: '#276749' },
-      { arr: histData.b, color: '#255581' }
-    ];
-
-    channels.forEach(ch => {
-      ctx.strokeStyle = ch.color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ch.arr.forEach((v, i) => {
-        const x = pad + (i * (w - pad - 16)) / (ch.arr.length - 1);
-        const y = h - pad - (v / maxVal) * (h - pad - 20);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-    });
-
-    ctx.fillStyle = '#6b7785';
-    ctx.font = '12px Inter, sans-serif';
-    ctx.fillText('0', pad - 4, h - 12);
-    ctx.fillText('128', w / 2 - 12, h - 12);
-    ctx.fillText('255', w - 32, h - 12);
-  }
-
-  // Ensure image canvas and histogram graph are preserved and restored when returning to analysis tab
+  // Restore the image canvas when returning to the analysis tab
   useEffect(() => {
     if (currentPage === 'analysis') {
       const c = canvasRef.current;
@@ -564,13 +608,7 @@ export default function App() {
         const ctx = c.getContext('2d', { willReadFrequently: true });
         if (ctx) ctx.putImageData(d, 0, 0);
       }
-      if (analysisResult?.histograms) {
-        const h = analysisResult.histograms;
-        const activeHist = h.wound?.cal || h.wound?.raw || h.skin?.cal || h.skin?.raw;
-        if (activeHist) {
-          requestAnimationFrame(() => drawHistogram(activeHist));
-        }
-      }
+
     }
   }, [currentPage, analysisResult]);
 
@@ -597,13 +635,6 @@ export default function App() {
       const data: AnalysisResult = await res.json();
       setAnalysisResult(data);
 
-      // Render histogram if provided by backend
-      const woundHist = data.histograms?.wound?.cal;
-      const skinHist = data.histograms?.skin?.cal;
-      const activeHist = (woundHist && woundHist.r.length > 0) ? woundHist : skinHist;
-      if (activeHist) {
-        setTimeout(() => drawHistogram(activeHist), 100);
-      }
     } catch (err: unknown) {
       console.warn('Backend /api/analyze offline or returned error. Falling back to in-browser estimator:', err);
       // Client-side fallback analyzer for offline demo capability
@@ -696,111 +727,107 @@ export default function App() {
     };
 
     setAnalysisResult(fallbackResult);
-    setTimeout(() => drawHistogram({ r: histR, g: histG, b: histB }), 100);
+
   }
 
   async function saveAnalysisToHistory() {
-    if (!analysisResult) return;
+    if (!analysisResult || saveInFlightRef.current) return;
+    saveInFlightRef.current = true;
     setIsSavingDb(true);
-    const generatedCaseId = caseId.trim() || `CASE-${new Date().getFullYear()}-${String(history.length + 1).padStart(3, '0')}`;
-    const dominantHex = analysisResult.color_profile?.dominant_colors?.[0]?.hex || '#A72C32';
-    const ageRange = analysisResult.age_estimate.range || 'Mixed / indeterminate';
-    const de00 = analysisResult.calibration.loocv_median_de00 ?? 0;
-    const area = analysisResult.wound_size?.area_cm2 ? analysisResult.wound_size.area_cm2 * 100 : 0;
-    const thumbImg = analysisResult.previews?.overlay || analysisResult.previews?.calibrated || analysisResult.previews?.original || null;
-
-    let savedId = Date.now().toString();
-    let savedToMySQL = false;
-
-    try {
-      const res = await fetch('/api/records', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify({
-          userEmail: profile.email,
-          patientId: generatedCaseId,
-          woundLocation: bodySite || 'Not specified',
-          imageFilename: file?.name || 'sample_image.jpg',
-          estimatedAge: ageRange,
-          confidence: analysisResult.age_estimate.confidence_score || 0,
-          deltaE00: de00,
-          surfaceAreaMm2: area,
-          dominantHex: dominantHex,
-          summary: notes || analysisResult.age_estimate.reason || '',
-          thumbnail: thumbImg,
-          resultJson: analysisResult
-        })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.id) {
-          savedId = String(data.id);
-          savedToMySQL = true;
-        }
-      }
-    } catch (err) {
-      console.warn('Could not save record to MySQL, saving locally:', err);
-    } finally {
-      setIsSavingDb(false);
-    }
-
-    const newRecord: HistoryItem = {
-      id: savedId,
-      date: new Date().toISOString(),
-      caseId: generatedCaseId,
-      file: file?.name || 'sample_image.jpg',
-      bodySite: bodySite || 'Not specified',
-      notes: notes,
-      age: ageRange,
+    setHistoryError(null);
+    const email = profile.email.trim().toLowerCase();
+    const token = localStorage.getItem(KEY_TOKEN) || '';
+    const clientId = crypto.randomUUID();
+    const record: HistoryItem = {
+      id: `local-${clientId}`, clientId, syncStatus: 'pending', date: new Date().toISOString(),
+      caseId: caseId.trim() || nextCaseId(historyRef.current),
+      file: file?.name || analysisResult.filename, bodySite: bodySite || 'Not specified', notes,
+      age: analysisResult.age_estimate.range || 'Mixed / indeterminate',
       calibrated: analysisResult.calibration.is_calibrated,
-      colors: analysisResult.color_profile.dominant_colors.slice(0, 3).map(c => c.hex),
-      thumbnail: thumbImg,
+      colors: analysisResult.color_profile.dominant_colors.filter(c => /^#[0-9a-f]{6}$/i.test(c.hex)).slice(0, 3).map(c => c.hex),
+      thumbnail: analysisResult.previews?.overlay || analysisResult.previews?.calibrated || analysisResult.previews?.original || null,
       confidence: analysisResult.age_estimate.confidence_score,
-      deltaE00: de00,
-      surfaceAreaMm2: area,
-      resultJson: analysisResult
+      deltaE00: analysisResult.calibration.loocv_median_de00 ?? undefined,
+      surfaceAreaMm2: analysisResult.wound_size?.area_cm2 != null ? analysisResult.wound_size.area_cm2 * 100 : undefined,
+      resultJson: analysisResult,
     };
-
-    const updated = [newRecord, ...history];
-    setHistory(updated);
-    if (profile?.email) {
-      localStorage.setItem(`bcc_history_${profile.email.trim().toLowerCase()}`, JSON.stringify(updated));
-    }
-    if (savedToMySQL) {
-      setSaveToast(`บันทึกเข้าประวัติบัญชีของคุณ (${profile.email}) สำเร็จ (ID: #${savedId})`);
-      setTimeout(() => setSaveToast(null), 4000);
-      refreshFromDatabase(profile.email);
-    } else {
-      setSaveToast('บันทึกลงในเครื่อง (Local Storage) เรียบร้อย');
+    historyRevisionRef.current++;
+    let cached = false;
+    let savedToDatabase = false;
+    const next = [record, ...historyRef.current];
+    try { await persistHistoryCache(email, next); cached = true; } catch { /* Server save can still succeed. */ }
+    if (token !== (localStorage.getItem(KEY_TOKEN) || '')) { saveInFlightRef.current = false; setIsSavingDb(false); return; }
+    historyRevisionRef.current++;
+    updateHistory(current => [record, ...current]);
+    try {
+      const saved = await sendHistoryRecord(record, token);
+      savedToDatabase = true;
+      if (token !== localStorage.getItem(KEY_TOKEN)) return;
+      historyRevisionRef.current++;
+      updateHistory(current => current.map(row => row.id === record.id ? saved : row));
+      setSaveToast('บันทึก MySQL สำเร็จ');
+    } catch (error) {
+      if (token !== (localStorage.getItem(KEY_TOKEN) || '')) return;
+      if (error instanceof HistoryAuthenticationError) { expireSession(token); return; }
+      setHistoryError(cached
+        ? `${error instanceof Error ? error.message : 'ติดต่อ MySQL ไม่สำเร็จ'} — เก็บในเครื่องแล้ว กดบันทึก MySQL ในหน้าประวัติเพื่อลองใหม่`
+        : 'ยังบันทึกทั้ง MySQL และในเครื่องไม่สำเร็จ กรุณาอย่าปิดหน้านี้และลองบันทึกอีกครั้ง');
+    } finally {
+      if ((cached || savedToDatabase) && token === localStorage.getItem(KEY_TOKEN)) {
+        caseIdEditedRef.current = false;
+        setCaseId(nextCaseId(historyRef.current));
+      }
+      saveInFlightRef.current = false;
+      setIsSavingDb(false);
       setTimeout(() => setSaveToast(null), 4000);
     }
   }
 
-
+  async function syncPendingRecord(record: HistoryItem) {
+    if (recordBusyRef.current || record.syncStatus !== 'pending') return;
+    recordBusyRef.current = true;
+    setBusyRecord(record.id);
+    setHistoryError(null);
+    const token = localStorage.getItem(KEY_TOKEN) || '';
+    historyRevisionRef.current++;
+    try {
+      const saved = await sendHistoryRecord(record, token);
+      if (token !== localStorage.getItem(KEY_TOKEN)) return;
+      historyRevisionRef.current++;
+      updateHistory(current => current.map(row => row.id === record.id ? saved : row));
+      setSelectedCase(current => current?.id === record.id ? saved : current);
+    } catch (error) {
+      if (error instanceof HistoryAuthenticationError) { expireSession(token); return; }
+      if (token === (localStorage.getItem(KEY_TOKEN) || '')) setHistoryError(error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ รายการยังรอซิงก์');
+    } finally { recordBusyRef.current = false; setBusyRecord(null); }
+  }
 
   async function deleteHistoryItem(id: string) {
-    if (!confirm('ต้องการลบประวัติการวิเคราะห์รายการนี้หรือไม่?')) return;
-
+    const record = historyRef.current.find(row => row.id === id);
+    if (!record || recordBusyRef.current || !confirm('ต้องการลบประวัติการวิเคราะห์รายการนี้หรือไม่?')) return;
+    recordBusyRef.current = true;
+    setBusyRecord(id);
+    setHistoryError(null);
+    const token = localStorage.getItem(KEY_TOKEN) || '';
+    historyRevisionRef.current++;
     try {
-      await fetch(`/api/records/${id}`, { method: 'DELETE' });
-    } catch (e) {
-      console.warn('Delete from MySQL failed or was offline:', e);
-    }
-    const updated = history.filter(h => h.id !== id);
-    setHistory(updated);
-    if (profile?.email) {
-      localStorage.setItem(`bcc_history_${profile.email.trim().toLowerCase()}`, JSON.stringify(updated));
-    }
+      await deleteHistoryRecord(record, token);
+      if (token !== (localStorage.getItem(KEY_TOKEN) || '')) return;
+      const next = historyRef.current.filter(row => row.id !== id);
+      if (record.syncStatus === 'pending') await persistHistoryCache(profile.email, next);
+      historyRevisionRef.current++;
+      updateHistory(current => current.filter(row => row.id !== id));
+      setSelectedCase(current => current?.id === id ? null : current);
+    } catch (error) {
+      if (error instanceof HistoryAuthenticationError) { expireSession(token); return; }
+      if (token === (localStorage.getItem(KEY_TOKEN) || '')) setHistoryError(error instanceof Error ? error.message : 'ลบไม่สำเร็จ รายการยังอยู่ในประวัติ');
+    } finally { recordBusyRef.current = false; setBusyRecord(null); }
   }
 
   function exportCsv() {
     const rows = [
       ['Date', 'Case ID', 'Image', 'Body Site', 'Estimated Age', 'Calibrated', 'Notes'],
-      ...history.map(x => [
+      ...filteredHistory.map(x => [
         new Date(x.date).toLocaleString(),
         x.caseId,
         x.file,
@@ -811,7 +838,7 @@ export default function App() {
       ])
     ];
     const csvContent = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'bruise_analysis_history.csv';
@@ -833,6 +860,10 @@ export default function App() {
     const now = new Date();
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
+
+  if (isCheckingSession) {
+    return <div role="status" style={{ padding: 40, textAlign: 'center' }}>กำลังตรวจสอบการเข้าสู่ระบบ...</div>;
+  }
 
   if (!isAuthenticated) {
     return (
@@ -919,7 +950,7 @@ export default function App() {
             ) : (
               <>
                 <h2>Create Account</h2>
-                <div className="sub">สร้างบัญชีนักวิจัย / แพทย์ชันสูตรใหม่ (บันทึกลง MySQL)</div>
+                <div className="sub">สร้างบัญชีผู้ใช้งาน</div>
                 <form onSubmit={handleRegister}>
                   <div style={{ marginBottom: 12 }}>
                     <label>ชื่อ - นามสกุล (Full Name)</label>
@@ -1086,6 +1117,7 @@ export default function App() {
         </header>
 
         <main className="page">
+          {historyError && <div className="callout warn" role="alert" style={{ marginBottom: 16 }}>{historyError}</div>}
           {saveToast && (
             <div
               style={{
@@ -1361,9 +1393,11 @@ export default function App() {
                     <label>Case / Subject ID</label>
                     <input
                       className="input"
-                      placeholder="e.g. CASE-2026-001"
+                      id="caseId"
+                      placeholder="Case001"
                       value={caseId}
-                      onChange={e => setCaseId(e.target.value)}
+                      onChange={e => { caseIdEditedRef.current = true; setCaseId(e.target.value); }}
+                      disabled={isSavingDb}
                     />
                   </div>
 
@@ -1453,10 +1487,10 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Age Assessment & Wound Size */}
+                  {/* Age Assessment */}
                   <div className="card">
                     <div className="card-h">
-                      <b>Bruise Assessment & Size</b>
+                      <b>Bruise Assessment</b>
                       <span className="badge warn">Experimental Heuristic</span>
                     </div>
                     <div className="card-b">
@@ -1475,14 +1509,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {analysisResult.wound_size?.width_cm && (
-                        <div style={{ marginTop: 16 }} className="metric">
-                          <div className="label">Physical Size Estimate</div>
-                          <div className="value" style={{ fontSize: 18 }}>
-                            {analysisResult.wound_size.width_cm} × {analysisResult.wound_size.length_cm} ซม. (พื้นที่ ≈ {analysisResult.wound_size.area_cm2} ซม.²)
-                          </div>
-                        </div>
-                      )}
 
                       <div className="callout" style={{ marginTop: 14 }}>
                         <b>{analysisResult.age_estimate.reason || 'Normal skin / no significant wound proposal'}</b>
@@ -1499,8 +1525,8 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Overlays and Histograms */}
-                <div className="grid g2" style={{ marginTop: 20 }}>
+                {/* Visual overlay */}
+                <div style={{ marginTop: 20 }}>
                   {/* Visual Composite Overlays */}
                   <div className="card">
                     <div className="card-h">
@@ -1526,17 +1552,9 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* RGB Histogram */}
-                  <div className="card">
-                    <div className="card-h">
-                      <b>RGB Pixel Distribution Histogram</b>
-                      <span className="small">32 Bins (Red, Green, Blue)</span>
-                    </div>
-                    <div className="card-b">
-                      <canvas ref={histCanvasRef} className="chart" width={700} height={280} />
-                    </div>
-                  </div>
                 </div>
+
+                <AnalysisDetails result={analysisResult} />
 
                 <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
                   <button className="btn secondary" onClick={clearAnalysisForm}>
@@ -1619,13 +1637,14 @@ export default function App() {
                         <th>Dominant Colors</th>
                         <th>Estimated Age</th>
                         <th>Calibration</th>
+                        <th>Save status</th>
                         <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredHistory.length === 0 ? (
                         <tr>
-                          <td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>
+                          <td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>
                             No matching records found.
                           </td>
                         </tr>
@@ -1676,11 +1695,13 @@ export default function App() {
                               {row.calibrated ? (
                                 <span className="badge ok">Calibrated</span>
                               ) : (
-                                <span className="badge warn">Raw</span>
+                                <span className="badge warn">{row.resultJson?.calibration?.is_calibrated === false ? 'Raw' : 'Unknown'}</span>
                               )}
                             </td>
+                            <td><span className={`badge ${row.syncStatus === 'pending' ? 'warn' : 'ok'}`}>{row.syncStatus === 'pending' ? 'Pending sync' : 'MySQL'}</span></td>
                             <td>
-                              <div style={{ display: 'flex', gap: 6 }}>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {row.syncStatus === 'pending' && <button className="btn teal" disabled={busyRecord !== null} onClick={() => syncPendingRecord(row)}>{busyRecord === row.id ? 'Saving...' : 'Save to MySQL'}</button>}
                                 <button
                                   className="btn teal"
                                   onClick={() => setSelectedCase(row)}
@@ -1692,6 +1713,7 @@ export default function App() {
                                 <button
                                   className="btn secondary"
                                   onClick={() => deleteHistoryItem(row.id)}
+                                  disabled={busyRecord !== null}
                                   style={{ padding: '5px 10px', fontSize: 12, color: 'var(--danger)' }}
                                   title="Delete record from MySQL"
                                 >
@@ -1773,13 +1795,13 @@ export default function App() {
       {/* CLINICAL CASE INSPECTION MODAL */}
       {selectedCase && (
         <div className="modal-backdrop" onClick={() => setSelectedCase(null)}>
-          <div className="modal-dialog" onClick={e => e.stopPropagation()}>
+          <div className="modal-dialog case-report" role="dialog" aria-modal="true" aria-label="Analysis report" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <h2 style={{ fontSize: 20, color: 'var(--navy)' }}>{selectedCase.caseId}</h2>
                   <span className={`badge ${selectedCase.calibrated ? 'ok' : 'warn'}`}>
-                    {selectedCase.calibrated ? 'Calibrated' : 'Raw / Uncalibrated'}
+                    {selectedCase.calibrated ? 'Calibrated' : selectedCase.resultJson?.calibration?.is_calibrated === false ? 'Raw / Uncalibrated' : 'Calibration unavailable'}
                   </span>
                   <span className="badge info">{selectedCase.age}</span>
                 </div>
@@ -1866,7 +1888,7 @@ export default function App() {
                   <div className="v" style={{ fontSize: 20 }}>
                     {selectedCase.resultJson?.calibration?.loocv_median_de00 != null
                       ? selectedCase.resultJson.calibration.loocv_median_de00.toFixed(2)
-                      : selectedCase.deltaE00 ? selectedCase.deltaE00.toFixed(2) : '—'}
+                      : selectedCase.deltaE00 != null ? selectedCase.deltaE00.toFixed(2) : '—'}
                   </div>
                   <div className="small">ColorChecker Calibration Error</div>
                 </div>
@@ -1878,7 +1900,7 @@ export default function App() {
                       : '—'}
                   </div>
                   <div className="small">
-                    {selectedCase.resultJson?.wound_size?.width_cm && selectedCase.resultJson?.wound_size?.length_cm
+                    {selectedCase.resultJson?.wound_size?.width_cm != null && selectedCase.resultJson?.wound_size?.length_cm != null
                       ? `${selectedCase.resultJson.wound_size.width_cm} × ${selectedCase.resultJson.wound_size.length_cm} cm`
                       : 'Approximate area'}
                   </div>
@@ -1894,7 +1916,7 @@ export default function App() {
                   </div>
                   <div className="card-b">
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                      {selectedCase.resultJson?.color_profile?.dominant_colors?.map((col, idx) => (
+                      {selectedCase.resultJson?.color_profile?.dominant_colors?.length ? selectedCase.resultJson.color_profile.dominant_colors.map((col, idx) => (
                         <div
                           key={idx}
                           style={{
@@ -1915,7 +1937,7 @@ export default function App() {
                             </div>
                           </div>
                         </div>
-                      )) || selectedCase.colors.map((c, i) => (
+                      )) : selectedCase.colors.map((c, i) => (
                         <span key={i} className="color-dot" style={{ background: c, width: 24, height: 24 }} title={c} />
                       ))}
                     </div>
@@ -1943,6 +1965,10 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {selectedCase.resultJson ? (
+                <AnalysisDetails result={selectedCase.resultJson} />
+              ) : <div className="callout" role="status">This older record has no saved colour or histogram details. Analyse the original photo again to create a complete record.</div>}
 
               {/* Calibration Card Patches Table if present */}
               {selectedCase.resultJson?.calibration?.table && selectedCase.resultJson.calibration.table.length > 0 && (

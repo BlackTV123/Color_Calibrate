@@ -1,4 +1,5 @@
 import json
+import asyncio
 import hashlib
 from pathlib import Path
 from typing import Optional, Any
@@ -84,6 +85,7 @@ class RegisterRequest(BaseModel):
 
 
 class RecordCreateRequest(BaseModel):
+    clientRecordId: Optional[str] = Field(default=None, min_length=1, max_length=80)
     userEmail: Optional[str] = Field(default="", description="Owner user email for account isolation")
     patientId: Optional[str] = Field(default="", description="Patient or Case ID")
     woundLocation: Optional[str] = Field(default="", description="Anatomical site")
@@ -211,7 +213,8 @@ async def login(body: LoginRequest):
 
 @app.get("/api/auth/me")
 async def get_current_user_profile(user_claims: dict = Depends(get_current_user_required)):
-    """Protected endpoint validating JWT Bearer token claims."""
+    """Validate signed claims and the account before restoring a browser session."""
+    await record_owner(user_claims)
     return {
         "success": True,
         "user": user_claims
@@ -249,187 +252,144 @@ async def analyze(file: UploadFile = File(...)):
 # Clinical Records (CRUD backed by MySQL with JWT Auth Isolation)
 # -------------------------------------------------------------
 
-@app.get("/api/records")
-async def list_records(
-    userEmail: Optional[str] = Query(None, description="User email for per-account isolated records"),
-    auth_user: Optional[dict] = Depends(get_current_user_optional),
-    limit: int = Query(100, ge=1, le=500),
-    search: Optional[str] = None
-):
+async def record_owner(auth_user: dict):
+    """Resolve the account from signed claims; request email never selects an owner."""
     if not db.is_connected():
         raise HTTPException(status_code=503, detail="Database service unavailable.")
+    try:
+        user_id = int(auth_user["sub"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid account identity.")
+    user = await db.user.find_unique(where={"id": user_id})
+    if not user or user.email.strip().lower() != str(auth_user.get("email", "")).strip().lower():
+        raise HTTPException(status_code=401, detail="Account is no longer available.")
+    return user
 
-    # Prioritize authenticated JWT user email over query parameter
-    effective_email = (auth_user.get("email") if auth_user else None) or (userEmail.strip().lower() if userEmail else None)
 
-    where_filter = {}
-    if effective_email:
-        user = await db.user.find_unique(where={"email": effective_email})
-        if not user:
-            return {"total": 0, "records": []}
-        where_filter["userId"] = user.id
+def record_response(record) -> dict:
+    result = {}
+    if record.resultJson:
+        try:
+            parsed = json.loads(record.resultJson)
+            if isinstance(parsed, dict):
+                result = parsed
+        except (ValueError, TypeError):
+            pass
+    previews = result.get("previews") or {}
+    thumbnail = record.thumbnail or previews.get("overlay") or previews.get("calibrated") or previews.get("original")
+    return {
+        "id": str(record.id), "patientId": record.patientId,
+        "woundLocation": record.woundLocation, "imageFilename": record.imageFilename,
+        "estimatedAge": record.estimatedAge, "confidence": record.confidence,
+        "deltaE00": record.deltaE00, "surfaceAreaMm2": record.surfaceAreaMm2,
+        "dominantHex": record.dominantHex, "summary": record.summary,
+        "thumbnail": thumbnail,
+        "createdAt": record.createdAt.isoformat() if record.createdAt else "",
+        "resultJson": result,
+    }
 
+
+@app.get("/api/records")
+async def list_records(
+    userEmail: Optional[str] = Query(None, description="Deprecated; owner comes from authentication"),
+    auth_user: dict = Depends(get_current_user_required),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    search: Optional[str] = None,
+):
+    user = await record_owner(auth_user)
+    where_filter = {"userId": user.id}
     if search:
-        search_filter = [
-            {"patientId": {"contains": search}},
-            {"woundLocation": {"contains": search}},
-            {"summary": {"contains": search}},
-        ]
-        if "userId" in where_filter:
-            where_filter = {
-                "AND": [
-                    {"userId": where_filter["userId"]},
-                    {"OR": search_filter}
-                ]
-            }
-        else:
-            where_filter = {"OR": search_filter}
-
+        where_filter = {"AND": [
+            {"userId": user.id},
+            {"OR": [
+                {"patientId": {"contains": search}},
+                {"woundLocation": {"contains": search}},
+                {"summary": {"contains": search}},
+            ]},
+        ]}
     try:
         records = await db.record.find_many(
-            where=where_filter if where_filter else None,
-            order={"createdAt": "desc"},
-            take=limit
+            where=where_filter, order={"createdAt": "desc"}, take=limit, skip=offset
         )
-        items = []
-        for r in records:
-            res = {}
-            if r.resultJson:
-                try:
-                    res = json.loads(r.resultJson)
-                except Exception:
-                    res = {}
-
-            # Thumbnail resolution
-            thumb = r.thumbnail
-            if not thumb and isinstance(res, dict):
-                prev = res.get("previews", {})
-                thumb = prev.get("overlay") or prev.get("calibrated") or prev.get("original")
-
-            items.append({
-                "id": str(r.id),
-                "patientId": r.patientId,
-                "woundLocation": r.woundLocation,
-                "imageFilename": r.imageFilename,
-                "estimatedAge": r.estimatedAge,
-                "confidence": r.confidence,
-                "deltaE00": r.deltaE00,
-                "surfaceAreaMm2": r.surfaceAreaMm2,
-                "dominantHex": r.dominantHex,
-                "summary": r.summary,
-                "thumbnail": thumb,
-                "createdAt": r.createdAt.isoformat() if r.createdAt else "",
-                "resultJson": res
-            })
-        return {"total": len(items), "records": items}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to query records: {str(e)}")
+        total = await db.record.count(where=where_filter)
+        return {"total": total, "records": [record_response(record) for record in records]}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to load records.")
 
 
 @app.get("/api/records/{record_id}")
-async def get_record(record_id: int):
-    if not db.is_connected():
-        raise HTTPException(status_code=503, detail="Database service unavailable.")
-
-    record = await db.record.find_unique(where={"id": record_id})
+async def get_record(record_id: int, auth_user: dict = Depends(get_current_user_required)):
+    user = await record_owner(auth_user)
+    record = await db.record.find_first(where={"id": record_id, "userId": user.id})
     if not record:
         raise HTTPException(status_code=404, detail="Record not found.")
+    return record_response(record)
 
-    res = {}
-    if record.resultJson:
-        try:
-            res = json.loads(record.resultJson)
-        except Exception:
-            res = {}
 
-    thumb = record.thumbnail
-    if not thumb and isinstance(res, dict):
-        prev = res.get("previews", {})
-        thumb = prev.get("overlay") or prev.get("calibrated") or prev.get("original")
-
-    return {
-        "id": str(record.id),
-        "patientId": record.patientId,
-        "woundLocation": record.woundLocation,
-        "imageFilename": record.imageFilename,
-        "estimatedAge": record.estimatedAge,
-        "confidence": record.confidence,
-        "deltaE00": record.deltaE00,
-        "surfaceAreaMm2": record.surfaceAreaMm2,
-        "dominantHex": record.dominantHex,
-        "summary": record.summary,
-        "thumbnail": thumb,
-        "createdAt": record.createdAt.isoformat() if record.createdAt else "",
-        "resultJson": res
-    }
+_record_create_lock = asyncio.Lock()
 
 
 @app.post("/api/records", status_code=status.HTTP_201_CREATED)
 async def create_record(
     body: RecordCreateRequest,
-    auth_user: Optional[dict] = Depends(get_current_user_optional)
+    auth_user: dict = Depends(get_current_user_required),
 ):
-    if not db.is_connected():
-        raise HTTPException(status_code=503, detail="Database service unavailable.")
-
-    # Associate record with logged-in user (from JWT claims if available, else body)
-    effective_email = (auth_user.get("email") if auth_user else None) or (body.userEmail.strip().lower() if body.userEmail else None)
-    user = None
-    if effective_email:
-        user = await db.user.find_unique(where={"email": effective_email})
-    if not user:
-        user = await db.user.find_first()
-    user_id = user.id if user else None
-
-    # Determine thumbnail
-    thumb = body.thumbnail
-    if not thumb and isinstance(body.resultJson, dict):
-        prev = body.resultJson.get("previews", {})
-        thumb = prev.get("overlay") or prev.get("calibrated") or prev.get("original")
-
-    # Serialize resultJson cleanly
-    result_str = ""
-    if isinstance(body.resultJson, (dict, list)):
-        result_str = json.dumps(body.resultJson)
-    elif isinstance(body.resultJson, str):
-        result_str = body.resultJson
-
+    user = await record_owner(auth_user)
+    result_payload = body.resultJson
+    if isinstance(result_payload, str):
+        try:
+            result_payload = json.loads(result_payload)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid analysis result JSON.")
+    if not isinstance(result_payload, dict):
+        raise HTTPException(status_code=422, detail="Analysis result must be an object.")
+    result_payload = dict(result_payload)
+    if body.clientRecordId:
+        result_payload["_client_record_id"] = body.clientRecordId
+    else:
+        result_payload.pop("_client_record_id", None)
+    previews = result_payload.get("previews") or {}
+    thumb = body.thumbnail or previews.get("overlay") or previews.get("calibrated") or previews.get("original")
     try:
-        new_record = await db.record.create(
-            data={
-                "userId": user_id,
-                "patientId": body.patientId or "",
+        # Retrying an offline save reuses its client ID, including after a lost response.
+        async with _record_create_lock:
+            existing = None
+            if body.clientRecordId:
+                marker = '"_client_record_id": ' + json.dumps(body.clientRecordId)
+                existing = await db.record.find_first(where={
+                    "userId": user.id, "resultJson": {"contains": marker}
+                })
+            record = existing or await db.record.create(data={
+                "userId": user.id, "patientId": body.patientId or "",
                 "woundLocation": body.woundLocation or "",
                 "imageFilename": body.imageFilename or "",
                 "estimatedAge": body.estimatedAge or "",
-                "confidence": float(body.confidence or 0.0),
-                "deltaE00": float(body.deltaE00 or 0.0),
-                "surfaceAreaMm2": float(body.surfaceAreaMm2 or 0.0),
+                "confidence": float(body.confidence or 0),
+                "deltaE00": float(body.deltaE00 or 0),
+                "surfaceAreaMm2": float(body.surfaceAreaMm2 or 0),
                 "dominantHex": body.dominantHex or "",
-                "summary": body.summary or "",
-                "thumbnail": thumb or "",
-                "resultJson": result_str
-            }
-        )
+                "summary": body.summary or "", "thumbnail": thumb or "",
+                "resultJson": json.dumps(result_payload, ensure_ascii=False, allow_nan=False),
+            })
         return {
-            "success": True,
-            "id": str(new_record.id),
-            "createdAt": new_record.createdAt.isoformat() if new_record.createdAt else ""
+            "success": True, "id": str(record.id),
+            "createdAt": record.createdAt.isoformat() if record.createdAt else "",
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to persist record: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to persist record.")
 
 
 @app.delete("/api/records/{record_id}")
-async def delete_record(record_id: int):
-    if not db.is_connected():
-        raise HTTPException(status_code=503, detail="Database service unavailable.")
-
+async def delete_record(record_id: int, auth_user: dict = Depends(get_current_user_required)):
+    user = await record_owner(auth_user)
     try:
-        deleted = await db.record.delete(where={"id": record_id})
-        return {"success": True, "id": str(deleted.id)}
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Record not found or delete failed: {str(e)}")
+        count = await db.record.delete_many(where={"id": record_id, "userId": user.id})
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to delete record.")
+    if not count:
+        raise HTTPException(status_code=404, detail="Record not found.")
+    return {"success": True, "id": str(record_id)}
 
 
 # -------------------------------------------------------------

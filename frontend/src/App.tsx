@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Icon from './Icon';
+import { validatePhotoFile, formatAgeEstimate, isLegacyDemo, parseAnalysisResponse } from './ui';
 import AnalysisDetails, { type MeasuredColour } from './AnalysisDetails';
 import { HistoryAuthenticationError, type HistoryItem, nextCaseId, mapHistoryRecord, mergeHistory, readHistoryCache, persistHistoryCache, sendHistoryRecord, deleteHistoryRecord } from './history';
 
@@ -116,6 +118,7 @@ export default function App() {
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [busyRecord, setBusyRecord] = useState<string | null>(null);
   const [cacheReady, setCacheReady] = useState('');
   const historyRef = useRef<HistoryItem[]>([]);
@@ -143,6 +146,8 @@ export default function App() {
     setSelectedCase(null);
     setSaveToast(null);
     clearAnalysisForm();
+    setIsSavingProfile(false);
+    setProfileFeedback(null);
   }
 
   function expireSession(token: string, message = 'เซสชันหมดอายุหรือยืนยันตัวตนไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่') {
@@ -265,6 +270,7 @@ export default function App() {
     const revision = historyRevisionRef.current;
     const currentSession = () => token === localStorage.getItem(KEY_TOKEN) && token === verifiedTokenRef.current && requestId === refreshIdRef.current;
     if (!token || verifiedTokenRef.current !== token) return;
+    setIsLoadingHistory(true);
     try {
       const healthRes = await fetch('/api/health');
       if (currentSession()) {
@@ -291,7 +297,7 @@ export default function App() {
       setHistoryError(null);
     } catch (error) {
       if (currentSession()) setHistoryError(error instanceof Error ? error.message : 'โหลดประวัติไม่สำเร็จ');
-    }
+    } finally { if (currentSession()) setIsLoadingHistory(false); }
   }
 
   // Auto-refresh history and database health every 20 seconds when logged in
@@ -299,11 +305,10 @@ export default function App() {
     if (!isAuthenticated || !profile.email) return;
 
     refreshFromDatabase(profile.email);
-    const interval = setInterval(() => {
-      refreshFromDatabase(profile.email);
-    }, 20000);
-
-    return () => clearInterval(interval);
+    const refreshVisible = () => { if (document.visibilityState === 'visible') refreshFromDatabase(profile.email); };
+    const interval = setInterval(refreshVisible, 20000);
+    document.addEventListener('visibilitychange', refreshVisible);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', refreshVisible); };
   }, [isAuthenticated, profile.email]);
 
   // Analysis form states
@@ -318,6 +323,58 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [saveToast, setSaveToast] = useState<string | null>(null);
+  const [previewStatus, setPreviewStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null);
+  const [referencePoint, setReferencePoint] = useState<[number, number] | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileFeedback, setProfileFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  const analysisAbortRef = useRef<AbortController | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const previewVersionRef = useRef(0);
+  const reportRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!selectedCase || !reportRef.current) return;
+    const report = reportRef.current;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    const background = [...document.querySelectorAll<HTMLElement>('.app-view > :not(.modal-backdrop)')];
+    const inertStates = background.map(element => element.inert);
+    background.forEach(element => { element.inert = true; });
+    document.body.style.overflow = 'hidden';
+    const focusable = () => [...report.querySelectorAll<HTMLElement>(
+      'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])'
+    )].filter(element => element.getClientRects().length > 0);
+    const close = report.querySelector<HTMLElement>('[data-close-report]');
+    (close || report).focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); setSelectedCase(null); return; }
+      if (event.key !== 'Tab') return;
+      const elements = focusable();
+      const first = elements[0], last = elements[elements.length - 1];
+      if (!first) { event.preventDefault(); report.focus(); return; }
+      if (event.shiftKey && (document.activeElement === first || !report.contains(document.activeElement))) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !report.contains(document.activeElement))) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      background.forEach((element, i) => { element.inert = inertStates[i]; });
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [selectedCase]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const frame = requestAnimationFrame(() => document.getElementById('page-title-' + currentPage)?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [currentPage, isAuthenticated]);
+
+
 
   useEffect(() => {
     if (!caseIdEditedRef.current && !isSavingDb) setCaseId(nextCaseId(history));
@@ -332,7 +389,21 @@ export default function App() {
   const workingImageDataRef = useRef<ImageData | null>(null);
 
   // Reset image canvas and analysis state
+  useEffect(() => () => {
+    analysisAbortRef.current?.abort();
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
+
   function removeImage() {
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
+    previewVersionRef.current++;
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
+    setIsAnalyzing(false);
+    setPreviewStatus('idle');
+    setPreviewMessage(null);
+    setReferencePoint(null);
     setFile(null);
     setAnalysisResult(null);
     setAnalysisError(null);
@@ -475,32 +546,30 @@ export default function App() {
     setLoginError('');
   }
 
-  async function handleSaveProfile(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSaveProfile(event: React.FormEvent) {
+    event.preventDefault();
+    if (isSavingProfile) return;
     const token = localStorage.getItem(KEY_TOKEN) || '';
-    localStorage.setItem(KEY_P, JSON.stringify(profile));
-
+    const next = { ...profile, name: profile.name.trim() };
+    if (!next.name) { setProfileFeedback({ kind: 'error', message: 'กรุณากรอกชื่อผู้ใช้' }); return; }
+    setIsSavingProfile(true);
+    setProfileFeedback(null);
     try {
-      const res = await fetch('/api/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify({
-          name: profile.name,
-          email: profile.email
-        })
+      const response = await fetch('/api/profile', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ name: next.name, email: next.email }),
       });
-      if (res.status === 401) { expireSession(token); return; }
-      if (res.ok) {
-        alert('บันทึกข้อมูลส่วนตัวลงใน MySQL เรียบร้อยแล้ว');
-        return;
+      if (token !== localStorage.getItem(KEY_TOKEN)) return;
+      if (response.status === 401) { expireSession(token); return; }
+      if (!response.ok) throw new Error('บันทึกชื่อบนเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองอีกครั้ง');
+      localStorage.setItem(KEY_P, JSON.stringify(next));
+      setProfile(next);
+      setProfileFeedback({ kind: 'success', message: 'บันทึกชื่อผู้ใช้ใน MySQL แล้ว' });
+    } catch (error) {
+      if (token === localStorage.getItem(KEY_TOKEN)) {
+        setProfileFeedback({ kind: 'error', message: error instanceof Error ? error.message : 'ติดต่อเซิร์ฟเวอร์ไม่ได้ ข้อความที่กรอกยังอยู่ กรุณาลองอีกครั้ง' });
       }
-    } catch (err) {
-      console.warn('Could not sync profile to backend:', err);
-    }
-    alert('บันทึกข้อมูลส่วนตัวเรียบร้อยแล้ว');
+    } finally { if (token === localStorage.getItem(KEY_TOKEN)) setIsSavingProfile(false); }
   }
 
   function getInitials(name: string) {
@@ -514,51 +583,94 @@ export default function App() {
 
   // File loading & canvas initialization
   function loadFile(selectedFile: File) {
+    const error = validatePhotoFile(selectedFile);
+    if (error) { setAnalysisError(error); return; }
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
+    setIsAnalyzing(false);
+    const version = ++previewVersionRef.current;
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     setFile(selectedFile);
     setAnalysisError(null);
     setAnalysisResult(null);
     setRefPixel(null);
+    setReferencePoint(null);
     setGainText('—');
     setIsManualCalibrated(false);
-
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const img = new Image();
-      img.onload = () => {
-        const c = canvasRef.current;
-        if (!c) return;
-        const ctx = c.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return;
-
-        const maxW = 1000;
-        const maxH = 650;
-        const scale = Math.min(maxW / img.width, maxH / img.height, 1);
-        c.width = Math.max(1, Math.round(img.width * scale));
-        c.height = Math.max(1, Math.round(img.height * scale));
-        ctx.drawImage(img, 0, 0, c.width, c.height);
-
-        originalImageDataRef.current = ctx.getImageData(0, 0, c.width, c.height);
-        workingImageDataRef.current = new ImageData(
-          new Uint8ClampedArray(originalImageDataRef.current.data),
-          c.width,
-          c.height
-        );
-      };
-      img.src = ev.target?.result as string;
+    originalImageDataRef.current = null;
+    workingImageDataRef.current = null;
+    setPreviewStatus('loading');
+    setPreviewMessage(null);
+    const url = URL.createObjectURL(selectedFile);
+    previewUrlRef.current = url;
+    const image = new Image();
+    const release = () => {
+      URL.revokeObjectURL(url);
+      if (previewUrlRef.current === url) previewUrlRef.current = null;
     };
-    reader.readAsDataURL(selectedFile);
+    const unavailable = () => {
+      if (version !== previewVersionRef.current) { release(); return; }
+      setPreviewStatus('unavailable');
+      setPreviewMessage('เบราว์เซอร์แสดงตัวอย่างไฟล์นี้ไม่ได้ คุณยังส่งภาพไปวิเคราะห์กับ backend ได้');
+      release();
+    };
+    image.onload = () => {
+      if (version !== previewVersionRef.current) { release(); return; }
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext('2d', { willReadFrequently: true });
+      if (!canvas || !context) { unavailable(); return; }
+      try {
+        const scale = Math.min(1000 / image.width, 650 / image.height, 1);
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        originalImageDataRef.current = context.getImageData(0, 0, canvas.width, canvas.height);
+        workingImageDataRef.current = new ImageData(
+          new Uint8ClampedArray(originalImageDataRef.current.data), canvas.width, canvas.height
+        );
+        setPreviewStatus('ready');
+      } catch { unavailable(); }
+      release();
+    };
+    image.onerror = unavailable;
+    image.src = url;
   }
 
-  function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    const c = canvasRef.current;
-    if (!c || !workingImageDataRef.current) return;
-    const r = c.getBoundingClientRect();
-    const x = Math.floor(((e.clientX - r.left) * c.width) / r.width);
-    const y = Math.floor(((e.clientY - r.top) * c.height) / r.height);
-    const d = workingImageDataRef.current.data;
-    const i = (y * c.width + x) * 4;
-    const p: [number, number, number] = [d[i], d[i + 1], d[i + 2]];
-    setRefPixel(p);
+  function inspectReferencePoint(x: number, y: number) {
+    const canvas = canvasRef.current;
+    const pixels = workingImageDataRef.current;
+    if (!canvas || !pixels) return;
+    x = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
+    y = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
+    const index = (y * canvas.width + x) * 4;
+    setReferencePoint([x, y]);
+    setRefPixel([pixels.data[index], pixels.data[index + 1], pixels.data[index + 2]]);
+  }
+
+  function handleCanvasClick(event: React.MouseEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    inspectReferencePoint((event.clientX - bounds.left) * canvas.width / bounds.width,
+      (event.clientY - bounds.top) * canvas.height / bounds.height);
+  }
+
+  function handleCanvasKeyDown(event: React.KeyboardEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas || !workingImageDataRef.current) return;
+    let [x, y] = referencePoint || [Math.floor(canvas.width / 2), Math.floor(canvas.height / 2)];
+    const step = event.shiftKey ? 10 : 1;
+    switch (event.key) {
+      case 'ArrowLeft': x -= step; break;
+      case 'ArrowRight': x += step; break;
+      case 'ArrowUp': y -= step; break;
+      case 'ArrowDown': y += step; break;
+      case 'Home': x = Math.floor(canvas.width / 2); y = Math.floor(canvas.height / 2); break;
+      case 'Enter': case ' ': break;
+      default: return;
+    }
+    event.preventDefault();
+    inspectReferencePoint(x, y);
   }
 
   function _applyNeutralCalibration() {
@@ -612,122 +724,36 @@ export default function App() {
     }
   }, [currentPage, analysisResult]);
 
-  // Run full analysis (via FastAPI backend /api/analyze with client fallback)
+  // Report only validated backend analysis results; keep input available on errors.
   async function runAnalysis() {
-    if (!file) return;
+    if (!file || isAnalyzing) return;
+    analysisAbortRef.current?.abort();
+    const controller = new AbortController();
+    analysisAbortRef.current = controller;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
     setIsAnalyzing(true);
     setAnalysisError(null);
-
+    setAnalysisResult(null);
     try {
       const formData = new FormData();
       formData.append('file', file);
-
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.detail || `Analysis request failed (${res.status})`);
+      const response = await fetch('/api/analyze', { method: 'POST', body: formData, signal: controller.signal });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(typeof error.detail === 'string' ? error.detail : 'เซิร์ฟเวอร์วิเคราะห์ภาพไม่สำเร็จ กรุณาลองอีกครั้ง');
       }
-
-      const data: AnalysisResult = await res.json();
-      setAnalysisResult(data);
-
-    } catch (err: unknown) {
-      console.warn('Backend /api/analyze offline or returned error. Falling back to in-browser estimator:', err);
-      // Client-side fallback analyzer for offline demo capability
-      runClientFallbackAnalysis();
+      const data = parseAnalysisResponse(await response.json().catch(() => { throw new Error('รูปแบบผลวิเคราะห์จากเซิร์ฟเวอร์ไม่ถูกต้อง กรุณาลองอีกครั้ง'); }));
+      if (analysisAbortRef.current === controller) setAnalysisResult(data);
+    } catch (error) {
+      if (analysisAbortRef.current !== controller) return;
+      setAnalysisError(timedOut ? 'การวิเคราะห์ใช้เวลานานเกินไป กรุณาลองอีกครั้งหรือลดขนาดภาพ'
+        : error instanceof TypeError ? 'ติดต่อเซิร์ฟเวอร์วิเคราะห์ไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง' : error instanceof Error && error.name !== 'AbortError' ? error.message
+        : 'ติดต่อเซิร์ฟเวอร์วิเคราะห์ไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง');
     } finally {
-      setIsAnalyzing(false);
+      window.clearTimeout(timeout);
+      if (analysisAbortRef.current === controller) { analysisAbortRef.current = null; setIsAnalyzing(false); }
     }
-  }
-
-  function runClientFallbackAnalysis() {
-    if (!workingImageDataRef.current || !file) return;
-    const d = workingImageDataRef.current.data;
-    const histR = new Array(32).fill(0);
-    const histG = new Array(32).fill(0);
-    const histB = new Array(32).fill(0);
-
-    let sr = 0, sg = 0, sb = 0, n = 0;
-    const bins: Record<string, number> = {};
-    const step = Math.max(1, Math.floor(d.length / 4 / 90000));
-
-    for (let p = 0; p < d.length / 4; p += step) {
-      const i = p * 4;
-      const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
-      if (a < 200) continue;
-      sr += r; sg += g; sb += b; n++;
-      histR[Math.min(31, Math.floor(r / 8))]++;
-      histG[Math.min(31, Math.floor(g / 8))]++;
-      histB[Math.min(31, Math.floor(b / 8))]++;
-
-      const qr = Math.min(255, Math.round(r / 32) * 32);
-      const qg = Math.min(255, Math.round(g / 32) * 32);
-      const qb = Math.min(255, Math.round(b / 32) * 32);
-      const key = `${qr},${qg},${qb}`;
-      bins[key] = (bins[key] || 0) + 1;
-    }
-
-    const mean = [Math.round(sr / n), Math.round(sg / n), Math.round(sb / n)];
-    const light = Math.round(((Math.max(...mean) + Math.min(...mean)) / 2 / 255) * 100);
-    const dominantColors = Object.entries(bins)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([k, v]) => {
-        const rgb = k.split(',').map(Number);
-        const hex = '#' + rgb.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
-        return {
-          name: `RGB ${rgb.join(',')}`,
-          hex,
-          percent: Math.round((v / n) * 100)
-        };
-      });
-
-    const fallbackResult: AnalysisResult = {
-      filename: file.name,
-      has_wound: true,
-      detection_note: 'In-browser client estimate (Backend service offline)',
-      calibration: {
-        status: isManualCalibrated ? 'Calibrated via neutral reference' : 'Uncalibrated',
-        is_calibrated: isManualCalibrated,
-        loocv_median_de00: isManualCalibrated ? 6.2 : null,
-      },
-      color_profile: {
-        mean_rgb: mean,
-        mean_lightness: light,
-        dominant_colors: dominantColors
-      },
-      wound_size: {
-        status: 'ประมาณจากพิกเซลตัวอย่าง',
-        width_cm: 3.4,
-        length_cm: 5.2,
-        area_cm2: 14.1,
-        pixel_area: n,
-        note: 'ต้องตรวจ overlay ด้วยตาประกอบการวิจัย'
-      },
-      age_estimate: {
-        status: 'ช่วงวันที่สอดคล้องกับสี (ต้นแบบ)',
-        range: '2–5 วัน',
-        midpoint_days: 3.5,
-        confidence: 'จำกัด — ใช้เป็นช่วงคัดกรองของต้นแบบเท่านั้น',
-        confidence_score: 55,
-        reason: 'กลุ่มสีเด่นม่วงอมชมพู/แดงเข้มตามเกณฑ์ต้นแบบ',
-        note: 'สีของแผลไม่สามารถบอกอายุแผลได้อย่างแม่นยำ'
-      },
-      histograms: {
-        wound: {
-          bins: Array.from({ length: 32 }, (_, i) => i * 8),
-          raw: { r: histR, g: histG, b: histB },
-          cal: { r: histR, g: histG, b: histB }
-        }
-      }
-    };
-
-    setAnalysisResult(fallbackResult);
-
   }
 
   async function saveAnalysisToHistory() {
@@ -742,7 +768,7 @@ export default function App() {
       id: `local-${clientId}`, clientId, syncStatus: 'pending', date: new Date().toISOString(),
       caseId: caseId.trim() || nextCaseId(historyRef.current),
       file: file?.name || analysisResult.filename, bodySite: bodySite || 'Not specified', notes,
-      age: analysisResult.age_estimate.range || 'Mixed / indeterminate',
+      age: formatAgeEstimate(analysisResult),
       calibrated: analysisResult.calibration.is_calibrated,
       colors: analysisResult.color_profile.dominant_colors.filter(c => /^#[0-9a-f]{6}$/i.test(c.hex)).slice(0, 3).map(c => c.hex),
       thumbnail: analysisResult.previews?.overlay || analysisResult.previews?.calibrated || analysisResult.previews?.original || null,
@@ -824,28 +850,6 @@ export default function App() {
     } finally { recordBusyRef.current = false; setBusyRecord(null); }
   }
 
-  function exportCsv() {
-    const rows = [
-      ['Date', 'Case ID', 'Image', 'Body Site', 'Estimated Age', 'Calibrated', 'Notes'],
-      ...filteredHistory.map(x => [
-        new Date(x.date).toLocaleString(),
-        x.caseId,
-        x.file,
-        x.bodySite,
-        x.age,
-        x.calibrated ? 'Yes' : 'No',
-        x.notes || ''
-      ])
-    ];
-    const csvContent = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'bruise_analysis_history.csv';
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
   const filteredHistory = history.filter(item => {
     const q = searchHistory.toLowerCase();
     const matchQ = !q || [item.caseId, item.file, item.bodySite, item.notes || ''].join(' ').toLowerCase().includes(q);
@@ -883,7 +887,7 @@ export default function App() {
               แสดง dominant colors, CIEDE2000 ΔE00, RGB histogram และบันทึกประวัติการวิเคราะห์ลง MySQL ผ่าน Prisma
             </p>
           </div>
-          <div style={{ color: '#99adc2', fontSize: 13 }}>
+          <div style={{ color: '#99adc2', fontSize: 14 }}>
             Senior Project • Clinical Research Workspace • MySQL & Prisma
           </div>
         </div>
@@ -891,24 +895,24 @@ export default function App() {
         <div className="login-panel">
           <div className="login-box" style={{ maxWidth: 460 }}>
             {/* Tabs for Sign In vs Register */}
-            <div className="auth-tabs">
-              <div
+            <div className="auth-tabs" role="group" aria-label="เลือกเข้าสู่ระบบหรือสมัครสมาชิก">
+              <button
                 className={`auth-tab ${authMode === 'signin' ? 'active' : ''}`}
                 onClick={() => { setAuthMode('signin'); setLoginError(''); setAuthSuccessMsg(''); }}
-              >
+               type="button" aria-pressed={authMode === "signin"}>
                 Sign In (เข้าสู่ระบบ)
-              </div>
-              <div
+              </button>
+              <button
                 className={`auth-tab ${authMode === 'register' ? 'active' : ''}`}
                 onClick={() => { setAuthMode('register'); setLoginError(''); setAuthSuccessMsg(''); }}
-              >
+               type="button" aria-pressed={authMode === "register"}>
                 Register (สมัครสมาชิก)
-              </div>
+              </button>
             </div>
 
             {authSuccessMsg && (
-              <div style={{ background: '#e8f5e9', color: '#1b5e20', border: '1px solid #c8e6c9', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
-                ✓ {authSuccessMsg}
+              <div style={{ background: '#e8f5e9', color: '#1b5e20', border: '1px solid #c8e6c9', padding: '10px 14px', borderRadius: 8, fontSize: 14, marginBottom: 16 }} role="status" aria-live="polite">
+                <Icon name="check" /> {authSuccessMsg}
               </div>
             )}
 
@@ -916,33 +920,33 @@ export default function App() {
               <>
                 <h2>Sign in</h2>
                 <div className="sub">เข้าสู่ระบบ Bruise Color Calibrate</div>
-                <form onSubmit={handleLogin}>
+                <form onSubmit={handleLogin} aria-busy={isSubmittingAuth} aria-describedby={loginError ? "login-error" : undefined}>
                   <div style={{ marginBottom: 16 }}>
-                    <label>Email</label>
+                    <label htmlFor="login-email">Email</label>
                     <input
                       type="email"
                       className="input"
                       value={loginEmail}
                       onChange={e => setLoginEmail(e.target.value)}
                       required
-                    />
+                     id="login-email" name="login-email" autoComplete="username" />
                   </div>
                   <div style={{ marginBottom: 20 }}>
-                    <label>Password</label>
+                    <label htmlFor="login-password">Password</label>
                     <input
                       type="password"
                       className="input"
                       value={loginPassword}
                       onChange={e => setLoginPassword(e.target.value)}
                       required
-                    />
+                     id="login-password" name="login-password" autoComplete="current-password" />
                   </div>
                   <button type="submit" className="btn primary" style={{ width: '100%' }} disabled={isSubmittingAuth}>
                     {isSubmittingAuth ? 'กำลังเข้าสู่ระบบ...' : 'Sign in'}
                   </button>
                 </form>
                 {loginError && (
-                  <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 13, fontWeight: 600 }}>
+                  <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14, fontWeight: 600 }} role="alert" id="login-error">
                     {loginError}
                   </div>
                 )}
@@ -951,20 +955,20 @@ export default function App() {
               <>
                 <h2>Create Account</h2>
                 <div className="sub">สร้างบัญชีผู้ใช้งาน</div>
-                <form onSubmit={handleRegister}>
+                <form onSubmit={handleRegister} aria-busy={isSubmittingAuth} aria-describedby={loginError ? "register-error" : undefined}>
                   <div style={{ marginBottom: 12 }}>
-                    <label>ชื่อ - นามสกุล (Full Name)</label>
+                    <label htmlFor="register-name">ชื่อ - นามสกุล (Full Name)</label>
                     <input
                       className="input"
                       placeholder="เช่น นพ. ธนภัทร รุ่งเรือง"
                       value={regName}
                       onChange={e => setRegName(e.target.value)}
                       required
-                    />
+                     id="register-name" name="register-name" autoComplete="name" />
                   </div>
 
                   <div style={{ marginBottom: 12 }}>
-                    <label>อีเมล (Email)</label>
+                    <label htmlFor="register-email">อีเมล (Email)</label>
                     <input
                       type="email"
                       className="input"
@@ -972,11 +976,11 @@ export default function App() {
                       value={regEmail}
                       onChange={e => setRegEmail(e.target.value)}
                       required
-                    />
+                     id="register-email" name="register-email" autoComplete="email" />
                   </div>
                   <div className="grid g2" style={{ gap: 10, marginBottom: 18 }}>
                     <div>
-                      <label>รหัสผ่าน (Password)</label>
+                      <label htmlFor="register-password">รหัสผ่าน (Password)</label>
                       <input
                         type="password"
                         className="input"
@@ -984,10 +988,10 @@ export default function App() {
                         value={regPassword}
                         onChange={e => setRegPassword(e.target.value)}
                         required
-                      />
+                       id="register-password" name="register-password" autoComplete="new-password" minLength={4} />
                     </div>
                     <div>
-                      <label>ยืนยันรหัสผ่าน</label>
+                      <label htmlFor="register-password-confirm">ยืนยันรหัสผ่าน</label>
                       <input
                         type="password"
                         className="input"
@@ -995,7 +999,7 @@ export default function App() {
                         value={regConfirmPassword}
                         onChange={e => setRegConfirmPassword(e.target.value)}
                         required
-                      />
+                       id="register-password-confirm" name="register-password-confirm" autoComplete="new-password" minLength={4} />
                     </div>
                   </div>
                   <button type="submit" className="btn teal" style={{ width: '100%' }} disabled={isSubmittingAuth}>
@@ -1003,7 +1007,7 @@ export default function App() {
                   </button>
                 </form>
                 {loginError && (
-                  <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 13, fontWeight: 600 }}>
+                  <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14, fontWeight: 600 }} role="alert" id="register-error">
                     {loginError}
                   </div>
                 )}
@@ -1017,6 +1021,7 @@ export default function App() {
 
   return (
     <div className="app-view">
+      <a className="skip-link" href="#main-content">ข้ามไปเนื้อหา</a>
       <aside className="sidebar">
         <div className="sidebrand">
           <div className="brand-icon">BC</div>
@@ -1026,28 +1031,28 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="navitems">
-          <div
+        <nav className="navitems" aria-label="เมนูหลัก">
+          <button
             className={`navitem ${currentPage === 'dashboard' ? 'active' : ''}`}
             onClick={() => setCurrentPage('dashboard')}
-          >
+           type="button" aria-current={currentPage === "dashboard" ? "page" : undefined}>
             <span className="navdot" />
             Dashboard
-          </div>
-          <div
+          </button>
+          <button
             className={`navitem ${currentPage === 'analysis' ? 'active' : ''}`}
             onClick={() => setCurrentPage('analysis')}
-          >
+           type="button" aria-current={currentPage === "analysis" ? "page" : undefined}>
             <span className="navdot" />
             New Analysis
-          </div>
-          <div
+          </button>
+          <button
             className={`navitem ${currentPage === 'history' ? 'active' : ''}`}
             onClick={() => setCurrentPage('history')}
-          >
+           type="button" aria-current={currentPage === "history" ? "page" : undefined}>
             <span className="navdot" />
             Analysis History
-          </div>
+          </button>
         </nav>
 
         <div className="sidefoot">
@@ -1066,13 +1071,13 @@ export default function App() {
             {currentPage === 'profile' && 'User Profile'}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div className="topbar-actions">
             <div
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
-                fontSize: 12,
+                fontSize: 14,
                 fontWeight: 600,
                 padding: '4px 10px',
                 borderRadius: 14,
@@ -1094,29 +1099,15 @@ export default function App() {
             </div>
 
             <div className="userchip">
-              <div
-                className={`profile-trigger ${currentPage === 'profile' ? 'active' : ''}`}
-                onClick={() => setCurrentPage('profile')}
-                title="คลิกเพื่อดูและจัดการโปรไฟล์ (User Profile)"
-              >
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: currentPage === 'profile' ? 'var(--teal)' : 'var(--navy)' }}>
-                    {profile.name}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{profile.email}</div>
-                </div>
-                <div className={`avatar ${currentPage === 'profile' ? 'active' : ''}`}>
-                  {getInitials(profile.name)}
-                </div>
-              </div>
-              <button className="btn ghost" onClick={handleLogout} style={{ padding: '6px 12px', fontSize: 13 }} title="ออกจากระบบ">
+              <button type="button" className={"profile-trigger "+(currentPage === "profile" ? "active" : "")} onClick={() => setCurrentPage("profile")} aria-label="เปิดโปรไฟล์" aria-pressed={currentPage === "profile"}><span className="profile-meta"><strong>{profile.name}</strong><span>{profile.email}</span></span><span className={"avatar "+(currentPage === "profile" ? "active" : "")} aria-hidden="true">{getInitials(profile.name)}</span></button>
+              <button className="btn ghost" onClick={handleLogout} style={{ padding: '6px 12px', fontSize: 14 }} title="ออกจากระบบ">
                 Logout
               </button>
             </div>
           </div>
         </header>
 
-        <main className="page">
+        <main className="page" id="main-content" tabIndex={-1}>
           {historyError && <div className="callout warn" role="alert" style={{ marginBottom: 16 }}>{historyError}</div>}
           {saveToast && (
             <div
@@ -1134,29 +1125,29 @@ export default function App() {
                 fontSize: 14,
                 boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
               }}
-            >
-              <span>✓</span> {saveToast}
+             role="status" aria-live="polite">
+              <Icon name="check" /> {saveToast}
             </div>
           )}
           {/* DASHBOARD PAGE */}
           <section style={{ display: currentPage === 'dashboard' ? 'block' : 'none' }}>
-            <h1 className="page-title">Dashboard</h1>
+            <h1 className="page-title" id="page-title-dashboard" tabIndex={-1}>Dashboard</h1>
             <div className="page-sub">ภาพรวมการวิเคราะห์และการปรับเทียบสีรอยฟกช้ำ</div>
 
             <div className="grid g4">
               <div className="card kpi">
                 <div className="t">Total analyses</div>
-                <div className="v">{history.length}</div>
+                <div className="v">{isLoadingHistory && !history.length ? '?' : history.length}</div>
                 <div className="small">Records in your account</div>
               </div>
               <div className="card kpi">
                 <div className="t">Calibrated images</div>
-                <div className="v">{calibratedCount}</div>
+                <div className="v">{isLoadingHistory && !history.length ? '?' : calibratedCount}</div>
                 <div className="small">with reference scale</div>
               </div>
               <div className="card kpi">
                 <div className="t">This month</div>
-                <div className="v">{currentMonthCount}</div>
+                <div className="v">{isLoadingHistory && !history.length ? '?' : currentMonthCount}</div>
                 <div className="small">new analyses logged</div>
               </div>
               <div className="card kpi">
@@ -1169,17 +1160,17 @@ export default function App() {
             <div className="grid g2" style={{ marginTop: 20 }}>
               <div className="card">
                 <div className="card-h">
-                  <b>Recent analyses</b>
-                  <button className="btn secondary" onClick={() => setCurrentPage('history')} style={{ padding: '6px 12px', fontSize: 12 }}>
+                  <h2 className="section-title">Recent analyses</h2>
+                  <button className="btn secondary" onClick={() => setCurrentPage('history')} style={{ padding: '6px 12px', fontSize: 14 }}>
                     View all
                   </button>
                 </div>
                 <div className="card-b">
                   {history.length === 0 ? (
-                    <div style={{ color: 'var(--muted)' }}>No analyses yet.</div>
+                    <div className="empty-state"><p>{isLoadingHistory ? 'กำลังโหลดประวัติ...' : 'ยังไม่มีรายการวิเคราะห์ เริ่มจากเลือกภาพแรกของคุณ'}</p>{!isLoadingHistory && <button className="btn secondary" onClick={() => setCurrentPage('analysis')}>เริ่มวิเคราะห์ภาพ</button>}</div>
                   ) : (
                     history.slice(0, 5).map(item => (
-                      <div
+                      <button
                         key={item.id}
                         onClick={() => setSelectedCase(item)}
                         style={{
@@ -1191,27 +1182,27 @@ export default function App() {
                           cursor: 'pointer'
                         }}
                         title="คลิกเพื่อดูผลการตรวจละเอียด"
-                      >
+                       type="button" className="recent-analysis" aria-label={"ดูผลวิเคราะห์ "+item.caseId}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           {item.thumbnail ? (
-                            <img src={item.thumbnail} alt={item.caseId} className="tbl-thumb" style={{ width: 44, height: 44 }} />
+                            <img src={item.thumbnail} alt={item.caseId} className="tbl-thumb" style={{ width: 44, height: 44 }}  loading="lazy" decoding="async" />
                           ) : (
-                            <div className="tbl-thumb-empty" style={{ width: 44, height: 44, fontSize: 10 }}>No img</div>
+                            <div className="tbl-thumb-empty" style={{ width: 44, height: 44, fontSize: 14 }}><Icon name="image" /></div>
                           )}
                           <div>
                             <b style={{ color: 'var(--navy)' }}>{item.caseId}</b>
-                            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                            <div style={{ fontSize: 14, color: 'var(--muted)' }}>
                               {item.file} • {item.bodySite}
                             </div>
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <span className="badge info">{item.age}</span>
-                          <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 600, marginTop: 4 }}>
-                            Inspect 🔍
+                          <div style={{ fontSize: 14, color: 'var(--teal)', fontWeight: 600, marginTop: 4 }}>
+                            Inspect <Icon name="search" />
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -1219,14 +1210,14 @@ export default function App() {
 
               <div className="card">
                 <div className="card-h">
-                  <b>Clinical Workflow</b>
+                  <h2 className="section-title">Clinical Workflow</h2>
                   <span className="badge ok">Ready</span>
                 </div>
                 <div className="card-b">
                   <div className="callout">
                     <b>1. Upload photo → 2. Auto detect card → 3. Calibrate → 4. Segment bruise → 5. Measure & Review</b>
                     <br />
-                    <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, display: 'block' }}>
+                    <span style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4, display: 'block' }}>
                       การ์ดสเกลสีอ้างอิงในสภาพแสงเดียวกันจะช่วยปรับแก้ความคลาดสี (CCM) ทำให้การวัดค่าสีมีความน่าเชื่อถือและทำซ้ำได้
                     </span>
                   </div>
@@ -1242,14 +1233,14 @@ export default function App() {
 
           {/* NEW ANALYSIS PAGE */}
           <section style={{ display: currentPage === 'analysis' ? 'block' : 'none' }}>
-            <h1 className="page-title">New Analysis</h1>
+            <h1 className="page-title" id="page-title-analysis" tabIndex={-1}>New Analysis</h1>
             <div className="page-sub">อัปโหลดภาพ ตรวจจับการ์ด ปรับเทียบสี และวิเคราะห์รอยฟกช้ำ</div>
 
             <div className="grid g2">
               {/* 1. Image acquisition */}
               <div className="card">
                 <div className="card-h">
-                  <b>1. Image acquisition</b>
+                  <h2 className="section-title">1. Image acquisition</h2>
                   <span className={`badge ${file ? 'ok' : 'info'}`}>
                     {file ? 'Image loaded' : 'No image'}
                   </span>
@@ -1258,7 +1249,7 @@ export default function App() {
                   {!file ? (
                     <div
                       className={`upload-zone ${isDragOver ? 'drag' : ''}`}
-                      onClick={() => document.getElementById('imageFileInput')?.click()}
+
                       onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
                       onDragLeave={() => setIsDragOver(false)}
                       onDrop={e => {
@@ -1268,9 +1259,9 @@ export default function App() {
                         if (f) loadFile(f);
                       }}
                     >
-                      <div className="upload-icon">↑</div>
+                      <div className="upload-icon"><Icon name="upload" /></div>
                       <b style={{ fontSize: 17, color: 'var(--navy)' }}>Drop clinical photo here or click to browse</b>
-                      <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 8, maxWidth: 380 }}>
+                      <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8, maxWidth: 380 }}>
                         วางไฟล์ภาพรอยฟกช้ำที่มีการ์ดสเกลสีอ้างอิง (Color Reference Card) เพื่อเริ่มการปรับเทียบสีอัตโนมัติ
                       </div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
@@ -1278,12 +1269,12 @@ export default function App() {
                         <span className="badge info">HEIC / HEIF</span>
                         <span className="badge info">Max 25MB</span>
                       </div>
-                      <div
+                      <button
                         className="btn primary"
                         style={{ marginTop: 22, padding: '10px 22px', fontSize: 14 }}
-                      >
+                       type="button" onClick={() => document.getElementById("imageFileInput")?.click()}>
                         Select Image File
-                      </div>
+                      </button>
                     </div>
                   ) : (
                     <>
@@ -1298,7 +1289,7 @@ export default function App() {
                           borderRadius: 10,
                           marginBottom: 14
                         }}
-                      >
+                       className="file-summary">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
                           <div
                             style={{
@@ -1313,23 +1304,23 @@ export default function App() {
                               flexShrink: 0
                             }}
                           >
-                            📷
+                            <Icon name="image" />
                           </div>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {file.name}
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                            <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 2 }}>
                               {(file.size / (1024 * 1024)).toFixed(2)} MB • โหลดภาพเรียบร้อย
                             </div>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }} className="file-actions">
                           <button
                             type="button"
                             className="btn secondary"
-                            style={{ padding: '6px 12px', fontSize: 12 }}
+                            style={{ padding: '6px 12px', fontSize: 14 }}
                             onClick={() => document.getElementById('imageFileInput')?.click()}
                             title="เลือกภาพอื่นแทนภาพนี้"
                           >
@@ -1338,32 +1329,32 @@ export default function App() {
                           <button
                             type="button"
                             className="btn secondary"
-                            style={{ padding: '6px 12px', fontSize: 12, color: 'var(--danger)', borderColor: '#feb2b2' }}
+                            style={{ padding: '6px 12px', fontSize: 14, color: 'var(--danger)', borderColor: '#feb2b2' }}
                             onClick={removeImage}
                             title="ลบภาพนี้ออกเพื่ออัปโหลดใหม่"
                           >
-                            🗑️ ลบภาพออก
+                            <Icon name="trash" /> ลบภาพออก
                           </button>
                         </div>
                       </div>
 
                       <div className="preview-wrap">
+                      {previewStatus !== 'ready' && <p className="preview-message" role="status">{previewStatus === 'loading' ? 'กำลังโหลดภาพตัวอย่าง...' : previewMessage || 'ยังไม่มีภาพตัวอย่าง'}</p>}
+
                         <canvas
                           ref={canvasRef}
                           id="imageCanvas"
                           onClick={handleCanvasClick}
-                          style={{ display: 'block' }}
-                        />
+                          style={{ display: previewStatus === "ready" ? "block" : "none" }}
+                         tabIndex={0} role="button" aria-label="ตรวจค่าสี RGB ในภาพ" aria-describedby="reference-pixel-help" onKeyDown={handleCanvasKeyDown}/>
                         {refPixel && (
-                          <div className="ref-pill">
+                          <div className="ref-pill" role="status">
                             Reference pixel: <b>RGB {refPixel.join(' / ')}</b>
                           </div>
                         )}
                       </div>
 
-                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
-                        Tip: สามารถคลิกบนบริเวณสีขาวหรือเทากลางบนการ์ดในภาพเพื่อเลือก reference pixel สำหรับ neutral calibration ได้
-                      </div>
+                                            <p id="reference-pixel-help" className="small" style={{ marginTop: 10 }}>คลิกภาพหรือใช้ Tab โฟกัสภาพ แล้วกด Enter เพื่อตรวจค่า RGB ใช้ปุ่มลูกศรเลื่อนทีละพิกเซล หรือ Shift + ลูกศรเลื่อนทีละ 10 พิกเซล</p>
                     </>
                   )}
 
@@ -1383,14 +1374,14 @@ export default function App() {
               {/* 2. Case Parameters & Submission */}
               <div className="card">
                 <div className="card-h">
-                  <b>2. Case parameters & notes</b>
+                  <h2 className="section-title">2. Case parameters & notes</h2>
                   <span className={`badge ${analysisResult?.calibration.is_calibrated ? 'ok' : 'warn'}`}>
                     {analysisResult?.calibration.is_calibrated ? 'Calibrated' : 'Pending analysis'}
                   </span>
                 </div>
                 <div className="card-b">
                   <div style={{ marginBottom: 14 }}>
-                    <label>Case / Subject ID</label>
+                    <label htmlFor="caseId">Case / Subject ID</label>
                     <input
                       className="input"
                       id="caseId"
@@ -1398,16 +1389,16 @@ export default function App() {
                       value={caseId}
                       onChange={e => { caseIdEditedRef.current = true; setCaseId(e.target.value); }}
                       disabled={isSavingDb}
-                    />
+                     name="caseId" autoComplete="off" />
                   </div>
 
                   <div style={{ marginBottom: 14 }}>
-                    <label>Body site</label>
+                    <label htmlFor="body-site">Body site</label>
                     <select
                       className="input"
                       value={bodySite}
                       onChange={e => setBodySite(e.target.value)}
-                    >
+                     id="body-site" name="body-site">
                       <option value="">Select body site</option>
                       <option value="Arm">Arm (แขน)</option>
                       <option value="Leg">Leg (ขา)</option>
@@ -1418,13 +1409,13 @@ export default function App() {
                   </div>
 
                   <div style={{ marginBottom: 18 }}>
-                    <label>Notes</label>
+                    <label htmlFor="analysis-notes">Notes</label>
                     <input
                       className="input"
                       placeholder="Optional clinical / lighting notes"
                       value={notes}
                       onChange={e => setNotes(e.target.value)}
-                    />
+                     id="analysis-notes" name="analysis-notes" autoComplete="off" />
                   </div>
 
                   <button
@@ -1436,9 +1427,11 @@ export default function App() {
                     {isAnalyzing ? 'Running pipeline analysis...' : 'Analyze Photo & Bruise'}
                   </button>
 
+                  {isAnalyzing && <p role="status" className="small" style={{ marginTop: 12 }}>กำลังวิเคราะห์ภาพ กรุณารอ คุณไม่ต้องอัปโหลดภาพซ้ำ</p>}
                   {analysisError && (
-                    <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 13 }}>
+                    <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14 }} role="alert" id="analysis-error">
                       {analysisError}
+                    {file && <button type="button" className="btn secondary" onClick={runAnalysis} disabled={isAnalyzing} style={{ marginTop: 12 }}>ลองวิเคราะห์อีกครั้ง</button>}
                     </div>
                   )}
                 </div>
@@ -1452,7 +1445,7 @@ export default function App() {
                   {/* Color Profile */}
                   <div className="card">
                     <div className="card-h">
-                      <b>Color Profile</b>
+                      <h2 className="section-title">Color Profile</h2>
                       <span className="badge ok">Analysis complete</span>
                     </div>
                     <div className="card-b">
@@ -1468,7 +1461,7 @@ export default function App() {
                       </div>
 
                       <div style={{ marginTop: 20 }}>
-                        <label>Dominant Colors (เทียบกับสเกล CIEDE2000)</label>
+                        <h3 className="field-heading">Dominant Colors (เทียบกับสเกล CIEDE2000)</h3>
                         <div className="palette" style={{ marginTop: 10 }}>
                           {analysisResult.color_profile.dominant_colors.map((c, i) => (
                             <div key={i} className="swatch">
@@ -1490,19 +1483,19 @@ export default function App() {
                   {/* Age Assessment */}
                   <div className="card">
                     <div className="card-h">
-                      <b>Bruise Assessment</b>
+                      <h2 className="section-title">Bruise Assessment</h2>
                       <span className="badge warn">Experimental Heuristic</span>
                     </div>
                     <div className="card-b">
                       <div className="grid g2">
                         <div className="metric">
-                          <div className="label">Estimated Day Range</div>
+                          <div className="label">ช่วงวันตามเกณฑ์สี (ทดลอง)</div>
                           <div className="value" style={{ color: 'var(--teal)' }}>
-                            {analysisResult.age_estimate.range || 'N/A (No bruise)'}
+                            {formatAgeEstimate(analysisResult)}
                           </div>
                         </div>
                         <div className="metric">
-                          <div className="label">Confidence Level</div>
+                          <div className="label">คะแนนตามเกณฑ์สี</div>
                           <div className="value" style={{ fontSize: 16 }}>
                             {analysisResult.age_estimate.confidence} ({analysisResult.age_estimate.confidence_score}/100)
                           </div>
@@ -1513,7 +1506,7 @@ export default function App() {
                       <div className="callout" style={{ marginTop: 14 }}>
                         <b>{analysisResult.age_estimate.reason || 'Normal skin / no significant wound proposal'}</b>
                         <br />
-                        <span style={{ fontSize: 12 }}>{analysisResult.age_estimate.note}</span>
+                        <span style={{ fontSize: 14 }}>{analysisResult.age_estimate.note}</span>
                       </div>
 
                       <div className="disclaimer" style={{ marginTop: 14 }}>
@@ -1530,7 +1523,7 @@ export default function App() {
                   {/* Visual Composite Overlays */}
                   <div className="card">
                     <div className="card-h">
-                      <b>Visual Composite & Mask Overlay</b>
+                      <h2 className="section-title">Visual Composite & Mask Overlay</h2>
                       <span className="small">Green: Skin | Red: Bruise Mask</span>
                     </div>
                     <div className="card-b" style={{ textAlign: 'center' }}>
@@ -1539,15 +1532,15 @@ export default function App() {
                           src={analysisResult.previews.overlay}
                           alt="Wound and Skin Overlay"
                           style={{ maxWidth: '100%', maxHeight: 380, borderRadius: 8, border: '1px solid var(--line)' }}
-                        />
+                         loading="lazy" decoding="async" />
                       ) : analysisResult.previews?.calibrated ? (
                         <img
                           src={analysisResult.previews.calibrated}
                           alt="Calibrated Preview"
                           style={{ maxWidth: '100%', maxHeight: 380, borderRadius: 8, border: '1px solid var(--line)' }}
-                        />
+                         loading="lazy" decoding="async" />
                       ) : (
-                        <div style={{ color: 'var(--muted)', padding: 40 }}>Overlay preview rendered on canvas</div>
+                        <div style={{ color: 'var(--muted)', padding: 40 }}>ผลลัพธ์นี้ไม่มีภาพ Overlay ให้แสดง</div>
                       )}
                     </div>
                   </div>
@@ -1556,7 +1549,7 @@ export default function App() {
 
                 <AnalysisDetails result={analysisResult} />
 
-                <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <div className="result-actions">
                   <button className="btn secondary" onClick={clearAnalysisForm}>
                     Clear
                   </button>
@@ -1576,7 +1569,7 @@ export default function App() {
           <section style={{ display: currentPage === 'history' ? 'block' : 'none' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
               <div>
-                <h1 className="page-title" style={{ marginBottom: 4 }}>Analysis History</h1>
+                <h1 className="page-title" style={{ marginBottom: 4 }} id="page-title-history" tabIndex={-1}>Analysis History</h1>
                 <div className="page-sub" style={{ margin: 0 }}>
                   ประวัติการวิเคราะห์ส่วนบุคคล (บันทึกแยกเฉพาะบัญชี: <b>{profile.email}</b>)
                 </div>
@@ -1584,10 +1577,10 @@ export default function App() {
               <button
                 className="btn secondary"
                 onClick={() => refreshFromDatabase(profile.email)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14 }}
                 title="ซิงค์ดึงประวัติล่าสุดของบัญชีคุณจาก MySQL (ระบบรีเฟรชอัตโนมัติทุก 20 วินาที)"
               >
-                🔄 ซิงค์ข้อมูลบัญชีนี้ <span style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 600 }}>(Auto 20s)</span>
+                <Icon name="refresh" /> ซิงค์ข้อมูลบัญชีนี้ <span style={{ fontSize: 14, color: 'var(--teal)', fontWeight: 600 }}>(Auto 20s)</span>
               </button>
             </div>
 
@@ -1599,12 +1592,12 @@ export default function App() {
                     placeholder="Search case ID, file name, body site, notes..."
                     value={searchHistory}
                     onChange={e => setSearchHistory(e.target.value)}
-                  />
+                   id="history-search" name="history-search" autoComplete="off" aria-label="ค้นหาประวัติ" />
                   <select
                     className="input"
                     value={filterAge}
                     onChange={e => setFilterAge(e.target.value)}
-                  >
+                   id="history-age" name="history-age" aria-label="กรองช่วงวันตามสี">
                     <option value="">All age ranges</option>
                     <option value="0–2 วัน">0–2 วัน</option>
                     <option value="2–5 วัน">2–5 วัน</option>
@@ -1616,72 +1609,50 @@ export default function App() {
                     className="input"
                     value={filterCal}
                     onChange={e => setFilterCal(e.target.value)}
-                  >
+                   id="history-calibration" name="history-calibration" aria-label="กรองสถานะการปรับสี">
                     <option value="">All calibration</option>
                     <option value="yes">Calibrated</option>
                     <option value="no">Not calibrated</option>
                   </select>
-                  <button className="btn secondary" onClick={exportCsv}>
-                    Export CSV
-                  </button>
                 </div>
 
-                <div className="tbl-wrap">
+                <div className="tbl-wrap" role="region" aria-label="ประวัติการวิเคราะห์" tabIndex={0}>
                   <table className="tbl">
                     <thead>
                       <tr>
-                        <th>Preview</th>
-                        <th>Case ID</th>
-                        <th>Date</th>
-                        <th>Body Site</th>
-                        <th>Dominant Colors</th>
-                        <th>Estimated Age</th>
-                        <th>Calibration</th>
-                        <th>Save status</th>
-                        <th>Action</th>
+                        <th scope="col">Preview</th>
+                        <th scope="col">Case ID</th>
+                        <th scope="col">Date</th>
+                        <th scope="col">Body Site</th>
+                        <th scope="col">Dominant Colors</th>
+                        <th scope="col">Estimated Age</th>
+                        <th scope="col">Calibration</th>
+                        <th scope="col">Save status</th>
+                        <th scope="col">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredHistory.length === 0 ? (
                         <tr>
                           <td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>
-                            No matching records found.
+{isLoadingHistory ? 'กำลังโหลดประวัติ...' : history.length ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ยังไม่มีประวัติการวิเคราะห์'}
+                            {!isLoadingHistory && <div style={{ marginTop: 12 }}>{history.length ? <button className="btn secondary" onClick={() => { setSearchHistory(''); setFilterAge(''); setFilterCal(''); }}>ล้างตัวกรอง</button> : <button className="btn primary" onClick={() => setCurrentPage('analysis')}>เริ่มวิเคราะห์ภาพ</button>}</div>}
                           </td>
                         </tr>
                       ) : (
                         filteredHistory.map(row => (
                           <tr key={row.id}>
+                            <td><button type="button" className="thumbnail-trigger" onClick={() => setSelectedCase(row)} aria-label={"ดูภาพและรายงาน "+row.caseId}>{row.thumbnail ? <img src={row.thumbnail} alt={"ภาพตัวอย่าง "+row.caseId} className="tbl-thumb" width={52} height={52} loading="lazy" decoding="async" /> : <span className="tbl-thumb-empty"><Icon name="image" /></span>}</button></td>
                             <td>
-                              {row.thumbnail ? (
-                                <img
-                                  src={row.thumbnail}
-                                  alt={row.caseId}
-                                  className="tbl-thumb"
-                                  onClick={() => setSelectedCase(row)}
-                                  style={{ cursor: 'pointer' }}
-                                  title="คลิกเพื่อดูรายละเอียดผลวิเคราะห์"
-                                />
-                              ) : (
-                                <div
-                                  className="tbl-thumb-empty"
-                                  onClick={() => setSelectedCase(row)}
-                                  style={{ cursor: 'pointer' }}
-                                  title="คลิกเพื่อดูรายละเอียดผลวิเคราะห์"
-                                >
-                                  No img
-                                </div>
-                              )}
-                            </td>
-                            <td>
-                              <div
+                              <button
                                 onClick={() => setSelectedCase(row)}
                                 style={{ cursor: 'pointer', color: 'var(--navy)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}
                                 title="คลิกเพื่อเปิดรายงานเคส"
-                              >
+                               type="button" className="case-link">
                                 <span>{row.caseId}</span>
-                                <span style={{ fontSize: 11, color: 'var(--teal)' }}>🔍</span>
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{row.file}</div>
+                                <span style={{ fontSize: 14, color: 'var(--teal)' }}><Icon name="search" /></span>
+                              </button>
+                              <div style={{ fontSize: 14, color: 'var(--muted)' }}>{row.file}</div>
                             </td>
                             <td>{new Date(row.date).toLocaleString()}</td>
                             <td><b>{row.bodySite}</b></td>
@@ -1705,7 +1676,7 @@ export default function App() {
                                 <button
                                   className="btn teal"
                                   onClick={() => setSelectedCase(row)}
-                                  style={{ padding: '5px 12px', fontSize: 12 }}
+                                  style={{ padding: '5px 12px', fontSize: 14 }}
                                   title="View full clinical case details"
                                 >
                                   View Detail
@@ -1714,7 +1685,7 @@ export default function App() {
                                   className="btn secondary"
                                   onClick={() => deleteHistoryItem(row.id)}
                                   disabled={busyRecord !== null}
-                                  style={{ padding: '5px 10px', fontSize: 12, color: 'var(--danger)' }}
+                                  style={{ padding: '5px 10px', fontSize: 14, color: 'var(--danger)' }}
                                   title="Delete record from MySQL"
                                 >
                                   Delete
@@ -1733,33 +1704,33 @@ export default function App() {
 
           {/* PROFILE PAGE */}
           <section style={{ display: currentPage === 'profile' ? 'block' : 'none' }}>
-            <h1 className="page-title">Profile</h1>
+            <h1 className="page-title" id="page-title-profile" tabIndex={-1}>Profile</h1>
             <div className="page-sub">ข้อมูลบัญชีผู้ใช้งานทางคลินิก (Clinical Research Account)</div>
 
             <div className="card">
               <div className="card-b profile-grid">
                 <div>
                   <div className="profile-photo">{getInitials(profile.name)}</div>
-                  <div style={{ marginTop: 12, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
+                  <div style={{ marginTop: 12, textAlign: 'center', fontSize: 14, color: 'var(--muted)' }}>
                     Forensic & Clinical Researcher
                   </div>
                 </div>
 
                 <div>
-                  <form onSubmit={handleSaveProfile}>
+                  <form onSubmit={handleSaveProfile} aria-busy={isSavingProfile}>
                     <div className="grid g2">
                       <div>
-                        <label>Full name (ชื่อ-นามสกุล)</label>
+                        <label htmlFor="profile-name">Full name (ชื่อ-นามสกุล)</label>
                         <input
                           className="input"
                           value={profile.name}
-                          onChange={e => setProfile({ ...profile, name: e.target.value })}
+                          onChange={e => { setProfile({ ...profile, name: e.target.value }); setProfileFeedback(null); }}
                           required
                           placeholder="ชื่อ-นามสกุลของคุณ"
-                        />
+                         id="profile-name" aria-describedby={profileFeedback ? "profile-feedback" : undefined} name="profile-name" autoComplete="name" />
                       </div>
                       <div>
-                        <label>Email Account (LOCK)</label>
+                        <label htmlFor="profile-email">Email Account (LOCK)</label>
                         <input
                           type="email"
                           className="input"
@@ -1772,18 +1743,19 @@ export default function App() {
                             cursor: 'not-allowed',
                             border: '1px solid #cbd5e1'
                           }}
-                        />
-                        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                          🔒 อีเมลนี้ใช้เป็นรหัสระบุตัวตนและแยกข้อมูลเคสคนไข้ใน MySQL ไม่สามารถแก้ไขได้
+                         id="profile-email" name="profile-email" autoComplete="email" />
+                        <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4 }}>
+                          <Icon name="lock" /> อีเมลนี้ใช้เป็นรหัสระบุตัวตนและแยกข้อมูลเคสคนไข้ใน MySQL ไม่สามารถแก้ไขได้
                         </div>
                       </div>
                     </div>
 
                     <div style={{ marginTop: 24 }}>
-                      <button type="submit" className="btn primary">
+                      <button type="submit" className="btn primary" disabled={isSavingProfile}>
                         Save Changes (บันทึกชื่อผู้ใช้)
                       </button>
                     </div>
+                      {profileFeedback && <p id="profile-feedback" className={"form-feedback " + profileFeedback.kind} role={profileFeedback.kind === 'error' ? 'alert' : 'status'}>{profileFeedback.message}</p>}
                   </form>
                 </div>
               </div>
@@ -1795,50 +1767,52 @@ export default function App() {
       {/* CLINICAL CASE INSPECTION MODAL */}
       {selectedCase && (
         <div className="modal-backdrop" onClick={() => setSelectedCase(null)}>
-          <div className="modal-dialog case-report" role="dialog" aria-modal="true" aria-label="Analysis report" onClick={e => e.stopPropagation()}>
+          <div className="modal-dialog case-report" role="dialog" aria-modal="true"  onClick={e => e.stopPropagation()} ref={reportRef} tabIndex={-1} aria-labelledby="case-report-title" aria-describedby="case-report-meta">
             <div className="modal-header">
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <h2 style={{ fontSize: 20, color: 'var(--navy)' }}>{selectedCase.caseId}</h2>
+                <div className="report-heading">
+                  <h2 style={{ fontSize: 20, color: 'var(--navy)' }} id="case-report-title">{selectedCase.caseId}</h2>
                   <span className={`badge ${selectedCase.calibrated ? 'ok' : 'warn'}`}>
                     {selectedCase.calibrated ? 'Calibrated' : selectedCase.resultJson?.calibration?.is_calibrated === false ? 'Raw / Uncalibrated' : 'Calibration unavailable'}
                   </span>
                   <span className="badge info">{selectedCase.age}</span>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4 }} id="case-report-meta">
                   บันทึกเมื่อ: {new Date(selectedCase.date).toLocaleString()} • ตำแหน่งร่างกาย: <b>{selectedCase.bodySite}</b> • ไฟล์: {selectedCase.file}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
                   className="btn secondary"
-                  style={{ padding: '6px 12px', fontSize: 13 }}
+                  style={{ padding: '6px 12px', fontSize: 14 }}
                   onClick={() => window.print()}
                   title="Print clinical assessment report"
                 >
-                  🖨️ Print Report
+                  <Icon name="print" /> Print Report
                 </button>
                 <button
                   className="btn ghost"
                   style={{ padding: '6px 10px', fontSize: 16 }}
                   onClick={() => setSelectedCase(null)}
-                >
-                  ✕
+                 aria-label="ปิดรายงาน" data-close-report>
+                  <Icon name="close" />
                 </button>
               </div>
             </div>
 
             <div className="modal-body">
+              {isLegacyDemo(selectedCase.resultJson) && <div className="callout warn" role="status">รายการนี้บันทึกจากโหมดตัวอย่างในเบราว์เซอร์ ค่าขนาดและช่วงวันไม่ใช่ผลวิเคราะห์จาก backend กรุณาวิเคราะห์ภาพต้นฉบับใหม่</div>}
+
               {/* Image Previews Grid */}
               <div className="case-preview-grid">
                 <div className="case-preview-card">
                   <div className="img-wrap">
                     {selectedCase.resultJson?.previews?.original ? (
-                      <img src={selectedCase.resultJson.previews.original} alt="Original Image" />
+                      <img src={selectedCase.resultJson.previews.original} alt="Original Image"  loading="lazy" decoding="async" />
                     ) : selectedCase.thumbnail ? (
-                      <img src={selectedCase.thumbnail} alt="Thumbnail Preview" />
+                      <img src={selectedCase.thumbnail} alt="Thumbnail Preview"  loading="lazy" decoding="async" />
                     ) : (
-                      <div style={{ color: '#99adc2', fontSize: 13 }}>No preview image</div>
+                      <div style={{ color: '#99adc2', fontSize: 14 }}>No preview image</div>
                     )}
                   </div>
                   <div className="caption">1. ภาพถ่ายต้นฉบับ (Original)</div>
@@ -1847,9 +1821,9 @@ export default function App() {
                 <div className="case-preview-card">
                   <div className="img-wrap">
                     {selectedCase.resultJson?.previews?.calibrated ? (
-                      <img src={selectedCase.resultJson.previews.calibrated} alt="Calibrated Image" />
+                      <img src={selectedCase.resultJson.previews.calibrated} alt="Calibrated Image"  loading="lazy" decoding="async" />
                     ) : (
-                      <div style={{ color: '#99adc2', fontSize: 13 }}>ไม่มีภาพ Calibrate แยกต่างหาก</div>
+                      <div style={{ color: '#99adc2', fontSize: 14 }}>ไม่มีภาพ Calibrate แยกต่างหาก</div>
                     )}
                   </div>
                   <div className="caption">2. ภาพปรับเทียบสีแล้ว (CCM Calibrated)</div>
@@ -1858,11 +1832,11 @@ export default function App() {
                 <div className="case-preview-card">
                   <div className="img-wrap">
                     {selectedCase.resultJson?.previews?.overlay ? (
-                      <img src={selectedCase.resultJson.previews.overlay} alt="Overlay & Mask" />
+                      <img src={selectedCase.resultJson.previews.overlay} alt="Overlay & Mask"  loading="lazy" decoding="async" />
                     ) : selectedCase.thumbnail ? (
-                      <img src={selectedCase.thumbnail} alt="Overlay Preview" />
+                      <img src={selectedCase.thumbnail} alt="Overlay Preview"  loading="lazy" decoding="async" />
                     ) : (
-                      <div style={{ color: '#99adc2', fontSize: 13 }}>ไม่มีภาพ Overlay</div>
+                      <div style={{ color: '#99adc2', fontSize: 14 }}>ไม่มีภาพ Overlay</div>
                     )}
                   </div>
                   <div className="caption">3. รอยแผลที่ตีกรอบ Mask (Overlay)</div>
@@ -1877,9 +1851,9 @@ export default function App() {
                   <div className="small">Heuristic Color Band</div>
                 </div>
                 <div className="card kpi">
-                  <div className="t">Confidence Score</div>
+                  <div className="t">คะแนนตามเกณฑ์สี</div>
                   <div className="v" style={{ fontSize: 20 }}>
-                    {selectedCase.resultJson?.age_estimate?.confidence_score ?? selectedCase.confidence ?? 0}%
+                    {selectedCase.resultJson?.age_estimate?.confidence_score ?? selectedCase.confidence ?? 0}/100
                   </div>
                   <div className="small">{selectedCase.resultJson?.age_estimate?.confidence || 'Confidence level'}</div>
                 </div>
@@ -1911,7 +1885,7 @@ export default function App() {
               <div className="grid g2" style={{ marginBottom: 20 }}>
                 <div className="card">
                   <div className="card-h">
-                    <b>Dominant Color Profile (กลุ่มสีเด่น)</b>
+                    <h2 className="section-title">Dominant Color Profile (กลุ่มสีเด่น)</h2>
                     <span className="small">Extracted Clusters</span>
                   </div>
                   <div className="card-b">
@@ -1931,8 +1905,8 @@ export default function App() {
                         >
                           <span className="color-dot" style={{ background: col.hex, width: 20, height: 20 }} />
                           <div>
-                            <div style={{ fontSize: 12, fontWeight: 700 }}>{col.name}</div>
-                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                            <div style={{ fontSize: 14, fontWeight: 700 }}>{col.name}</div>
+                            <div style={{ fontSize: 14, color: 'var(--muted)' }}>
                               {col.hex} • {col.percent}%
                             </div>
                           </div>
@@ -1946,11 +1920,11 @@ export default function App() {
 
                 <div className="card">
                   <div className="card-h">
-                    <b>Clinical Reasoning & Notes</b>
+                    <h2 className="section-title">Clinical Reasoning & Notes</h2>
                     <span className="small">เหตุผลประกอบการประเมิน</span>
                   </div>
                   <div className="card-b">
-                    <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                    <div style={{ fontSize: 14, lineHeight: 1.6 }}>
                       <b>Clinical Reasoning:</b>
                       <p style={{ color: '#4a5568', marginTop: 4 }}>
                         {selectedCase.resultJson?.age_estimate?.reason || selectedCase.notes || 'ไม่มีบันทึกเพิ่มเติม'}
@@ -1974,22 +1948,22 @@ export default function App() {
               {selectedCase.resultJson?.calibration?.table && selectedCase.resultJson.calibration.table.length > 0 && (
                 <div className="card" style={{ marginBottom: 20 }}>
                   <div className="card-h">
-                    <b>ColorChecker Scale Calibration Metrics (ΔE00)</b>
+                    <h2 className="section-title">ColorChecker Scale Calibration Metrics (ΔE00)</h2>
                     <span className="small">Leave-One-Out Cross-Validation (LOOCV)</span>
                   </div>
                   <div className="card-b">
-                    <div className="tbl-wrap" style={{ maxHeight: 240, overflowY: 'auto' }}>
-                      <table className="tbl" style={{ fontSize: 12 }}>
+                    <div className="tbl-wrap" style={{ maxHeight: 240, overflowY: 'auto' }} role="region" aria-label="รายละเอียดการปรับเทียบสี" tabIndex={0}>
+                      <table className="tbl calibration-table" style={{ fontSize: 14 }}>
                         <thead>
                           <tr>
-                            <th>Type</th>
-                            <th>Patch Name</th>
-                            <th>RGB Captured</th>
-                            <th>RGB Corrected</th>
-                            <th>RGB Reference</th>
-                            <th>ΔE00 Before</th>
-                            <th>ΔE00 After</th>
-                            <th>LOOCV ΔE00</th>
+                            <th scope="col">Type</th>
+                            <th scope="col">Patch Name</th>
+                            <th scope="col">RGB Captured</th>
+                            <th scope="col">RGB Corrected</th>
+                            <th scope="col">RGB Reference</th>
+                            <th scope="col">ΔE00 Before</th>
+                            <th scope="col">ΔE00 After</th>
+                            <th scope="col">LOOCV ΔE00</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2013,8 +1987,8 @@ export default function App() {
               )}
 
               {/* Clinical Disclaimer */}
-              <div className="callout warn" style={{ fontSize: 12 }}>
-                <b>⚠️ คำเตือนทางการแพทย์และนิติเวช (Clinical & Forensic Disclaimer):</b>
+              <div className="callout warn" style={{ fontSize: 14 }}>
+                <b><Icon name="alert" /> คำเตือนทางการแพทย์และนิติเวช (Clinical & Forensic Disclaimer):</b>
                 <br />
                 ผลการประเมินช่วงวันของรอยฟกช้ำเป็นเพียง Heuristic จากสเปกตรัมสีสำหรับงานวิจัยเท่านั้น
                 สีของบาดแผลเพียงอย่างเดียวไม่สามารถระบุวันเวลาบาดเจ็บได้อย่างแน่นอนทางนิติวิทยาศาสตร์
@@ -2027,7 +2001,7 @@ export default function App() {
                 className="btn secondary"
                 onClick={() => window.print()}
               >
-                🖨️ Print / Export PDF
+                <Icon name="print" /> Print / Export PDF
               </button>
               <button
                 className="btn primary"

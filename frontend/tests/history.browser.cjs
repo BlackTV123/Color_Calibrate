@@ -3,7 +3,7 @@ const dist = path.resolve(__dirname, '../dist'), profile = fs.mkdtempSync(path.j
 const channel = { r: Array(32).fill(10), g: Array(32).fill(15), b: Array(32).fill(9) };
 const row = { name: 'Test colour', hex: '#BB8763', rgb: [187, 135, 99], percent: 100, scale_match: 'Skin scale 6', de00: 7.1576 };
 const analysis = { filename: 'synthetic.jpg', has_wound: true, calibration: { is_calibrated: true, status: 'Calibrated', loocv_median_de00: 0 }, color_profile: { mean_rgb: [187, 135, 99], mean_lightness: 60, dominant_colors: [{ name: 'Scale', hex: '#BB8763', percent: 100 }] }, measured_colours: { skin: [row], wound: [row] }, wound_size: { status: 'Measured', width_cm: 4.75, length_cm: 6.04, area_cm2: 11.9 }, age_estimate: { range: null, confidence: 'Limited', confidence_score: 0, reason: 'Fixture' }, histograms: { skin: { bins: Array.from({ length: 32 }, (_, i) => i * 8), raw: channel, cal: channel }, wound: { bins: Array.from({ length: 32 }, (_, i) => i * 8), raw: channel, cal: channel } } };
-let records = [{ id: '1', patientId: 'CASE-SAVED', createdAt: '2026-10-31T01:00:00Z', imageFilename: 'synthetic.jpg', woundLocation: 'Arm', deltaE00: 0, resultJson: analysis }], deleteFail = true, authExpired = false;
+let records = [{ id: '1', patientId: 'CASE-SAVED', createdAt: '2026-10-31T01:00:00Z', imageFilename: 'synthetic.jpg', woundLocation: 'Arm', deltaE00: 0, resultJson: analysis }], deleteFail = true, authExpired = false, analysisFail = false, profileFail = false;
 const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     res.setHeader('Cache-Control', 'no-store');
@@ -17,6 +17,16 @@ const server = http.createServer((req, res) => {
             return res.end(JSON.stringify({ success: true, user: { sub: '7', email: 'qa@example.test', name: 'QA' } }));
         if (pathname === '/api/auth/login')
             return res.end(JSON.stringify({ success: true, access_token: 'qa-new-token', user: { id: 7, email: 'qa@example.test', name: 'QA' } }));
+        if (pathname === '/api/analyze') {
+            req.resume();
+            if (analysisFail) { res.statusCode = 500; return res.end('{"detail":"Analysis service unavailable"}'); }
+            return res.end(JSON.stringify(analysis));
+        }
+        if (pathname === '/api/profile') {
+            req.resume();
+            if (profileFail) { res.statusCode = 500; return res.end('{}'); }
+            return res.end('{"success":true}');
+        }
         if (pathname === '/api/health')
             return res.end(JSON.stringify({ database: 'connected' }));
         if (req.method === 'DELETE') {
@@ -107,6 +117,63 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await ev(del);
         await wait("!document.querySelector('main').innerText.includes('CASE-SAVED')", 'delete success');
         assert.ok(await ev("document.body.innerText.includes('CASE-PENDING')"));
+        // Audit regression: responsive controls, labelled forms, keyboard dialog and truthful failures.
+        const nav = label => ev("[...document.querySelectorAll('.navitem')].find(e=>e.textContent.includes("+JSON.stringify(label)+")).click()");
+        const labelled = "[...document.querySelectorAll('input,select,textarea')].filter(e=>e.getClientRects().length).every(e=>e.labels?.length||e.getAttribute('aria-label')||e.getAttribute('aria-labelledby'))";
+        for (const width of [320,390,768,1024,1440]) {
+            await send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width<600});
+            for (const label of ['Dashboard','New Analysis','Analysis History']) {
+                await nav(label);
+                assert.ok(await ev("document.documentElement.scrollWidth<=innerWidth+1"),label+' overflow at '+width);
+                assert.ok(await ev(labelled),label+' labels');
+            }
+            await ev("document.querySelector('.profile-trigger').click()");
+            assert.ok(await ev("document.documentElement.scrollWidth<=innerWidth+1"),'Profile overflow at '+width);
+            assert.ok(await ev(labelled),'Profile labels');
+        }
+        await nav('Analysis History');
+        const opener = "[...document.querySelectorAll('section')].find(s=>s.style.display==='block'&&s.innerText.includes('Analysis History')).querySelector('tbody button[title=\"View full clinical case details\"]')";
+        await ev(opener+".focus();"+opener+".click()");
+        await wait("!!document.querySelector('.case-report')",'Keyboard report');
+        assert.ok(await ev("document.activeElement.hasAttribute('data-close-report')&&document.querySelector('.main').inert"),'Dialog receives focus and background is inert');
+        for(let i=0;i<12;i++){
+            await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+            await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+            assert.ok(await ev("document.querySelector('.case-report').contains(document.activeElement)"),'Tab remains in report');
+        }
+        await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+        await wait("!document.querySelector('.case-report')",'Escape closes report');
+        assert.ok(await ev("document.activeElement.textContent.includes('View Detail')&&!document.querySelector('.main').inert"),'Dialog restores focus and background');
+        await nav('New Analysis');
+        await ev("(()=>{const dt=new DataTransfer();dt.items.add(new File(['text'],'notes.txt',{type:'text/plain'}));const i=document.querySelector('#imageFileInput');i.files=dt.files;i.dispatchEvent(new Event('change',{bubbles:true}));})()");
+        await wait("!!document.querySelector('#analysis-error')",'Unsupported file feedback');
+        await ev("(()=>{const c=document.createElement('canvas');c.width=200;c.height=150;c.getContext('2d').fillRect(0,0,200,150);const bytes=Uint8Array.from(atob(c.toDataURL('image/png').split(',')[1]),v=>v.charCodeAt(0));const dt=new DataTransfer();dt.items.add(new File([bytes],'audit.png',{type:'image/png'}));const i=document.querySelector('#imageFileInput');i.files=dt.files;i.dispatchEvent(new Event('change',{bubbles:true}));})()");
+        await wait("getComputedStyle(document.querySelector('#imageCanvas')).display!=='none'",'Preview loaded');
+        await ev("document.querySelector('#imageCanvas').focus()");
+        await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+        await wait("!!document.querySelector('.ref-pill')",'Keyboard RGB reading');
+        await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
+        analysisFail=true;
+        await ev("[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Analyze Photo & Bruise')).click()");
+        await wait("!!document.querySelector('#analysis-error')",'Analysis failure visible');
+        assert.equal(await ev("document.querySelectorAll('.histogram-plot').length"),0,'Failure must not manufacture results');
+        assert.ok(await ev("document.querySelector('#imageFileInput').files[0].name==='audit.png'"),'Failure preserves input');
+        analysisFail=false;
+        await ev("document.querySelector('#analysis-error button').click()");
+        await wait("document.querySelectorAll('.histogram-plot').length===6",'Retry produces backend result');
+        assert.ok(!await ev("document.querySelector('main').innerText.includes('N/A (No bruise)')"),'No false no-bruise label');
+        await ev("document.querySelector('.profile-trigger').click()");
+        profileFail=true;
+        await ev("document.querySelector('#profile-name').focus();document.querySelector('#profile-name').select()");
+        await send('Input.insertText',{text:'QA updated name'});
+        await ev("document.querySelector('form[aria-busy]').requestSubmit()");
+        await wait("document.querySelector('#profile-feedback')?.getAttribute('role')==='alert'",'Profile failure announced');
+        assert.equal(await ev("document.querySelector('#profile-name').value"),'QA updated name');
+        profileFail=false;
+        await ev("document.querySelector('form[aria-busy]').requestSubmit()");
+        await wait("document.querySelector('#profile-feedback')?.getAttribute('role')==='status'",'Profile success announced');
+        await nav('Analysis History');
+        console.log('PASS: UI audit keyboard, form labels, five viewport widths, dialog trap/Escape/focus restoration, validated upload, API error/retry, and profile failure/success');
         // Reject an expired session even though a complete offline cache exists.
         const cachedPending = "new Promise((resolve,reject)=>{const r=indexedDB.open('bcc_history_v2',1);r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;const q=db.transaction('accounts').objectStore('accounts').get('bcc_history_qa@example.test');q.onsuccess=()=>{resolve(q.result?.some(x=>x.id==='local-qa'));db.close();};};})";
         await wait(cachedPending, 'Pending cache committed');

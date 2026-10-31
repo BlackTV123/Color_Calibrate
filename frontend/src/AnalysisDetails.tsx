@@ -23,15 +23,15 @@ const number = (value: number | null | undefined, digits = 1) =>
 function Colours({ title, rows, empty }: { title: string; rows?: MeasuredColour[]; empty: string }) {
   const complete = rows?.length && rows.every(row => row.name && row.rgb?.length === 3 && row.percent > 0);
   return <section className="card measured-section">
-    <div className="card-h"><b>{title}</b><span className="small">สีจริงหลังปรับสี</span></div>
+    <div className="card-h"><h2 className="section-title">{title}</h2><span className="small">สีจริงหลังปรับสี</span></div>
     <div className="card-b">
       {complete ? <>
         <div className="measured-list">{rows!.map((row, index) => <article className="measured-colour" key={`${row.hex}-${index}`}>
           <span className="measured-chip" style={{ backgroundColor: row.hex }} aria-label={`สี ${row.hex}`} />
           <div><b>{row.name}</b><div className="measured-values">RGB ({row.rgb.join(', ')}) · {row.hex} · {number(row.percent)}% · ΔE00 {number(row.de00)}</div><div className="small">{row.scale_match}</div></div>
         </article>)}</div>
-        <details className="measured-table"><summary>ดูตารางสีทั้งหมด</summary><div className="tbl-wrap"><table className="tbl">
-          <thead><tr>{['ชื่อสีที่พบ', 'HEX', 'RGB ที่พบ', 'เปอร์เซ็นต์', 'ผลเทียบสเกล', 'ΔE00 ถึงสเกล'].map(label => <th key={label}>{label}</th>)}</tr></thead>
+        <details className="measured-table"><summary>ดูตารางสีทั้งหมด</summary><div className="tbl-wrap" role="region" aria-label="รายละเอียดกลุ่มสี" tabIndex={0}><table className="tbl">
+          <thead><tr>{['ชื่อสีที่พบ', 'HEX', 'RGB ที่พบ', 'เปอร์เซ็นต์', 'ผลเทียบสเกล', 'ΔE00 ถึงสเกล'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
           <tbody>{rows!.map((row, index) => <tr key={index}><td>{row.name}</td><td>{row.hex}</td><td>{row.rgb.join(', ')}</td><td>{number(row.percent, 4)}%</td><td>{row.scale_match}</td><td>{number(row.de00, 4)}</td></tr>)}</tbody>
         </table></div></details>
         <p className="small measured-note">ΔE00 แสดงความใกล้เคียงกับช่องสีอ้างอิง ไม่ใช่ค่าความผิดพลาดของสีจริง</p>
@@ -78,13 +78,13 @@ export default function AnalysisDetails({ result }: { result: DetailResult }) {
   return <div className="analysis-details">
     <Colours title="3. สีเนื้อที่ตรวจพบ" rows={result.measured_colours?.skin} empty="ไม่มีข้อมูลกลุ่มสีเนื้อ กรุณาวิเคราะห์ภาพใหม่เพื่อดูรายละเอียด" />
     <Colours title="4. สีแผลที่ตรวจพบ" rows={result.measured_colours?.wound} empty={result.has_wound ? 'ไม่มีข้อมูลกลุ่มสีแผล กรุณาวิเคราะห์ภาพใหม่เพื่อดูรายละเอียด' : 'ไม่พบรอยสีแผลที่เพียงพอสำหรับวิเคราะห์'} />
-    <section className="card"><div className="card-h"><b>5. ขนาดแผลโดยประมาณ</b></div><div className="card-b">
+    <section className="card"><div className="card-h"><h2 className="section-title">5. ขนาดแผลโดยประมาณ</h2></div><div className="card-b">
       <div className="wound-dimensions">{[
         ['กว้าง', size?.width_cm, 'cm'], ['ยาว', size?.length_cm, 'cm'], ['พื้นที่รอยสี', size?.area_cm2, 'cm²'],
       ].map(([label, value, unit]) => <div className="metric" key={String(label)}><div className="label">{label}</div><div className="value">{number(value as number | null | undefined, 2)} <span>{unit}</span></div></div>)}</div>
       <p className="small measured-note">{size?.width_cm != null ? size.note || 'ค่าประมาณ: แผลและการ์ดต้องอยู่ระนาบใกล้กัน และต้องตรวจสอบ mask ด้วยสายตา' : size?.status || 'ยังไม่มีข้อมูลสำหรับวัดขนาดแผล'}</p>
     </div></section>
-    <section className="card"><div className="card-h"><b>6. Histogram</b><span className="small">RGB ก่อน–หลังปรับสี · 32 bins</span></div><div className="card-b">
+    <section className="card"><div className="card-h"><h2 className="section-title">6. Histogram</h2><span className="small">RGB ก่อน–หลังปรับสี · 32 bins</span></div><div className="card-b">
       <div className="histogram-legend"><span><i className="before-key" />ก่อนปรับสี</span><span><i className="after-key" />หลังปรับสี</span></div>
       <div className="histogram-grid">{(['skin', 'wound'] as const).flatMap(group => (['r', 'g', 'b'] as const).map((channel, i) => <HistogramPlot key={`${group}-${channel}`} data={result.histograms?.[group]} channel={channel} title={`${group === 'skin' ? 'สีเนื้อ' : 'สีแผล'} — ${channel.toUpperCase()}`} colour={['#e35d6a', '#42a99b', '#5099bd'][i]} />))}</div>
     </div></section>

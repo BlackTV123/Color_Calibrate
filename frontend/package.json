@@ -11,7 +11,7 @@
     "build:prod": "tsc -b && vite build && xcopy dist ..\\backend\\static /E /I /Y",
     "prod": "npm run build:prod && ..\\backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --env-file ../backend/.env --port 8000 --host 127.0.0.1 --app-dir ../backend",
     "preview": "vite preview",
-    "test": "node --test tests/analysis-details.test.cjs tests/history.test.cjs",
+    "test": "node --test tests/analysis-details.test.cjs tests/history.test.cjs tests/ui.test.cjs",
     "test:browser": "node tests/history.browser.cjs"
   },
   "dependencies": {

@@ -1,5 +1,8 @@
-type IconName = 'upload' | 'image' | 'trash' | 'search' | 'print' | 'alert' | 'refresh' | 'lock' | 'close' | 'check';
+type IconName = 'upload' | 'image' | 'trash' | 'search' | 'print' | 'alert' | 'refresh' | 'lock' | 'close' | 'check' | 'menu' | 'home' | 'arrow-right';
 const paths: Record<IconName, string> = {
+  menu: 'M4 6h16M4 12h16M4 18h16',
+  home: 'm3 11 9-8 9 8M5 10v11h5v-7h4v7h5V10',
+  'arrow-right': 'M4 12h16m-6-6 6 6-6 6',
   upload: 'M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5',
   image: 'M3 3h18v18H3zM3 16l5-5 5 5 3-3 5 5M15 8h.01',
   trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7',

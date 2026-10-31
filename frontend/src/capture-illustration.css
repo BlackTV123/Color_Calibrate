@@ -1,0 +1,24 @@
+.capture-illustration { min-width: 0; margin: 0; border: 0; background: transparent; }
+.capture-stage {
+  position: relative; display: block; width: 100%; aspect-ratio: 1.13; padding: 0;
+  border: 0; border-radius: 0; box-shadow: none; overflow: hidden; isolation: isolate;
+  background: transparent; color: inherit; cursor: pointer; touch-action: manipulation;
+}
+.capture-stage:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.capture-backdrop {
+  position: absolute; inset: 15% 4% 7%; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(ellipse, rgba(120,172,174,.24), rgba(207,225,225,.12) 48%, transparent 74%);
+  filter: blur(28px);
+}
+.capture-hand { position: absolute; display: block; width: 100%; height: auto; left: 0; top: 40%; object-fit: contain; pointer-events: none; }
+.capture-camera { position: absolute; display: block; width: 43%; right: 8%; top: 0; transform: rotate(-10deg); pointer-events: none; }
+.capture-camera img { display: block; width: 100%; height: auto; }
+.capture-burst {
+  position: absolute; display: block; width: 110%; aspect-ratio: 1; left: 51%; top: 26%; opacity: 0; pointer-events: none;
+  transform: translate(-50%, -50%); background: radial-gradient(circle, #fff 0%, rgba(255,255,255,.92) 8%, rgba(255,255,255,.55) 25%, transparent 64%);
+}
+.capture-light {
+  position: absolute; display: block; inset: 0; opacity: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 65% 30%, white, rgba(255,255,255,.65) 30%, transparent 72%);
+}
+.capture-unavailable { display: block; padding: 32px; color: var(--muted); }

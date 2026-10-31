@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from './Icon';
+import Home from './Home';
+import NavigationDrawer from './NavigationDrawer';
+import { readPage, isWorkspacePage, type Page, type WorkspacePage } from './navigation';
 import { validatePhotoFile, formatAgeEstimate, isLegacyDemo, parseAnalysisResponse } from './ui';
 import AnalysisDetails, { type MeasuredColour } from './AnalysisDetails';
 import { HistoryAuthenticationError, type HistoryItem, nextCaseId, mapHistoryRecord, mergeHistory, readHistoryCache, persistHistoryCache, sendHistoryRecord, deleteHistoryRecord } from './history';
@@ -90,7 +93,7 @@ export default function App() {
   const [isCheckingSession, setIsCheckingSession] = useState(() => Boolean(localStorage.getItem(KEY_TOKEN) || localStorage.getItem(KEY_S)));
   const [sessionVersion, setSessionVersion] = useState(0);
   const verifiedTokenRef = useRef<string | null>(null);
-  const [authMode, setAuthMode] = useState<'signin' | 'register'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'register'>(() => readPage(window.location.hash) === 'register' ? 'register' : 'signin');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -104,7 +107,39 @@ export default function App() {
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
 
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'analysis' | 'history' | 'profile'>('dashboard');
+  const [currentPage, setRoute] = useState<Page>(() => readPage(window.location.hash));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pendingPageRef = useRef<WorkspacePage>(isWorkspacePage(readPage(window.location.hash)) ? readPage(window.location.hash) as WorkspacePage : 'dashboard');
+  function setCurrentPage(page: Page, replace = false) {
+    if (isWorkspacePage(page) && !isAuthenticated && !isCheckingSession) {
+      pendingPageRef.current = page;
+      page = 'login';
+    }
+    setMenuOpen(false);
+    if (page === 'login' || page === 'register') { setAuthMode(page === 'login' ? 'signin' : 'register'); setLoginError(''); }
+    if (page === 'register') setAuthSuccessMsg('');
+    setRoute(page);
+    if (replace) window.history.replaceState(null, '', '#' + page);
+    else if (window.location.hash !== '#' + page) window.location.hash = page;
+  }
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const page = readPage(window.location.hash);
+      setRoute(page);
+      setMenuOpen(false);
+      if (page === 'login' || page === 'register') setAuthMode(page === 'login' ? 'signin' : 'register');
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (isCheckingSession) return;
+    if (!isAuthenticated && isWorkspacePage(currentPage)) setCurrentPage(currentPage, true);
+    if (isAuthenticated && (currentPage === 'login' || currentPage === 'register')) setCurrentPage(pendingPageRef.current, true);
+  }, [isAuthenticated, isCheckingSession, currentPage]);
+
   const [selectedCase, setSelectedCase] = useState<HistoryItem | null>(null);
 
   const [profile, setProfile] = useState<UserProfile>(() => {
@@ -157,6 +192,7 @@ export default function App() {
     resetSessionView();
     setIsCheckingSession(false);
     setAuthMode('signin');
+    setCurrentPage('login');
     setLoginEmail(profile.email);
     setLoginError(message);
   }
@@ -167,7 +203,7 @@ export default function App() {
     if (!token) {
       localStorage.removeItem(KEY_S);
       setIsCheckingSession(false);
-      if (hadSession) setLoginError('กรุณาเข้าสู่ระบบใหม่เพื่อยืนยันตัวตน');
+      if (hadSession) { setCurrentPage('login'); setLoginError('กรุณาเข้าสู่ระบบใหม่เพื่อยืนยันตัวตน'); }
       return;
     }
     let cancelled = false;
@@ -196,6 +232,7 @@ export default function App() {
         setIsAuthenticated(true);
       } catch (error) {
         if (!cancelled && token === localStorage.getItem(KEY_TOKEN)) {
+          setCurrentPage('login');
           setLoginEmail(profile.email);
           setLoginError(error instanceof Error ? error.message : 'ตรวจสอบการเข้าสู่ระบบไม่สำเร็จ');
         }
@@ -369,10 +406,10 @@ export default function App() {
   }, [selectedCase]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (isCheckingSession) return;
     const frame = requestAnimationFrame(() => document.getElementById('page-title-' + currentPage)?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [currentPage, isAuthenticated]);
+  }, [currentPage, isAuthenticated, isCheckingSession]);
 
 
 
@@ -482,7 +519,7 @@ export default function App() {
         clearAnalysisForm();
 
         setIsAuthenticated(true);
-        setCurrentPage('dashboard');
+        setCurrentPage(pendingPageRef.current);
         refreshFromDatabase(userEmail);
         return;
       } else {
@@ -530,7 +567,7 @@ export default function App() {
       setAuthSuccessMsg('ลงทะเบียนสำเร็จเรียบร้อย! สามารถใช้อีเมลและรหัสผ่านนี้เข้าสู่ระบบได้ทันที');
       setLoginEmail(regEmail);
       setLoginPassword(regPassword);
-      setAuthMode('signin');
+      setCurrentPage('login');
     } catch (err: any) {
       setLoginError(err.message || 'เกิดข้อผิดพลาดในการลงทะเบียน');
     } finally {
@@ -544,6 +581,7 @@ export default function App() {
     resetSessionView();
     setIsCheckingSession(false);
     setLoginError('');
+    setCurrentPage('home');
   }
 
   async function handleSaveProfile(event: React.FormEvent) {
@@ -869,28 +907,13 @@ export default function App() {
     return <div role="status" style={{ padding: 40, textAlign: 'center' }}>กำลังตรวจสอบการเข้าสู่ระบบ...</div>;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && (currentPage === 'login' || currentPage === 'register')) {
     return (
       <section className="login-view">
-        <div className="login-brand">
-          <div className="brandmark">
-            <div className="brand-icon">BC</div>
-            BRUISE COLOR CALIBRATE
-          </div>
-          <div>
-            <div className="badge info" style={{ background: '#dfe9f4', color: '#173454', marginBottom: 18 }}>
-              Clinical Forensic Imaging Workspace
-            </div>
-            <h1>Color calibration and bruise assessment system.</h1>
-            <p>
-              ระบบต้นแบบสำหรับจัดการภาพรอยฟกช้ำ ปรับเทียบสีตามสเกลอ้างอิงอัตโนมัติ
-              แสดง dominant colors, CIEDE2000 ΔE00, RGB histogram และบันทึกประวัติการวิเคราะห์ลง MySQL ผ่าน Prisma
-            </p>
-          </div>
-          <div style={{ color: '#99adc2', fontSize: 14 }}>
-            Senior Project • Clinical Research Workspace • MySQL & Prisma
-          </div>
-        </div>
+        <header className="auth-header">
+          <button type="button" className="auth-brand" onClick={() => setCurrentPage('home')}><span className="brand-icon">BC</span><span>Bruise Color<br />Calibrate</span></button>
+          <button type="button" className="btn secondary" onClick={() => setCurrentPage('home')}><Icon name="home" />Home</button>
+        </header>
 
         <div className="login-panel">
           <div className="login-box" style={{ maxWidth: 460 }}>
@@ -898,13 +921,13 @@ export default function App() {
             <div className="auth-tabs" role="group" aria-label="เลือกเข้าสู่ระบบหรือสมัครสมาชิก">
               <button
                 className={`auth-tab ${authMode === 'signin' ? 'active' : ''}`}
-                onClick={() => { setAuthMode('signin'); setLoginError(''); setAuthSuccessMsg(''); }}
+                onClick={() => { setCurrentPage('login'); setLoginError(''); setAuthSuccessMsg(''); }}
                type="button" aria-pressed={authMode === "signin"}>
                 Sign In (เข้าสู่ระบบ)
               </button>
               <button
                 className={`auth-tab ${authMode === 'register' ? 'active' : ''}`}
-                onClick={() => { setAuthMode('register'); setLoginError(''); setAuthSuccessMsg(''); }}
+                onClick={() => { setCurrentPage('register'); setLoginError(''); setAuthSuccessMsg(''); }}
                type="button" aria-pressed={authMode === "register"}>
                 Register (สมัครสมาชิก)
               </button>
@@ -918,7 +941,7 @@ export default function App() {
 
             {authMode === 'signin' ? (
               <>
-                <h2>Sign in</h2>
+                <h1 className="page-title" id="page-title-login" tabIndex={-1}>Sign in</h1>
                 <div className="sub">เข้าสู่ระบบ Bruise Color Calibrate</div>
                 <form onSubmit={handleLogin} aria-busy={isSubmittingAuth} aria-describedby={loginError ? "login-error" : undefined}>
                   <div style={{ marginBottom: 16 }}>
@@ -953,7 +976,7 @@ export default function App() {
               </>
             ) : (
               <>
-                <h2>Create Account</h2>
+                <h1 className="page-title" id="page-title-register" tabIndex={-1}>Create Account</h1>
                 <div className="sub">สร้างบัญชีผู้ใช้งาน</div>
                 <form onSubmit={handleRegister} aria-busy={isSubmittingAuth} aria-describedby={loginError ? "register-error" : undefined}>
                   <div style={{ marginBottom: 12 }}>
@@ -1021,58 +1044,26 @@ export default function App() {
 
   return (
     <div className="app-view">
-      <a className="skip-link" href="#main-content">ข้ามไปเนื้อหา</a>
-      <aside className="sidebar">
-        <div className="sidebrand">
-          <div className="brand-icon">BC</div>
-          <div>
-            Bruise Color<br />
-            <span style={{ fontWeight: 500, color: '#aec0d3' }}>Calibrate</span>
-          </div>
-        </div>
-
-        <nav className="navitems" aria-label="เมนูหลัก">
-          <button
-            className={`navitem ${currentPage === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('dashboard')}
-           type="button" aria-current={currentPage === "dashboard" ? "page" : undefined}>
-            <span className="navdot" />
-            Dashboard
-          </button>
-          <button
-            className={`navitem ${currentPage === 'analysis' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('analysis')}
-           type="button" aria-current={currentPage === "analysis" ? "page" : undefined}>
-            <span className="navdot" />
-            New Analysis
-          </button>
-          <button
-            className={`navitem ${currentPage === 'history' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('history')}
-           type="button" aria-current={currentPage === "history" ? "page" : undefined}>
-            <span className="navdot" />
-            Analysis History
-          </button>
-        </nav>
-
-        <div className="sidefoot">
-          <b>Prototype v0.1</b>
-          <br />
-          For research and clinical workflow demonstration only.
-        </div>
-      </aside>
+      <a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>ข้ามไปเนื้อหา</a>
+      <NavigationDrawer open={menuOpen} page={currentPage} authenticated={isAuthenticated} onClose={() => setMenuOpen(false)} onNavigate={setCurrentPage} />
 
       <div className="main">
-        <header className="topbar">
-          <div className="top-title">
-            {currentPage === 'dashboard' && 'Dashboard'}
-            {currentPage === 'analysis' && 'New Analysis'}
-            {currentPage === 'history' && 'Analysis History'}
-            {currentPage === 'profile' && 'User Profile'}
+        <header className={"topbar" + (!isAuthenticated ? " public-topbar" : "")}>
+          <div className="topbar-start">
+            <button type="button" id="navigation-toggle" className="btn secondary menu-toggle" aria-label="เปิดเมนูหลัก" aria-haspopup="dialog"
+              aria-expanded={menuOpen} aria-controls="primary-navigation" onClick={() => setMenuOpen(true)}><Icon name="menu" /></button>
+            <div className="top-title">
+              <span className="site-name">Bruise Color Calibrate</span>
+              {currentPage === 'home' && 'Home'}
+              {currentPage === 'dashboard' && 'Dashboard'}
+              {currentPage === 'analysis' && 'New Analysis'}
+              {currentPage === 'history' && 'Analysis History'}
+              {currentPage === 'profile' && 'User Profile'}
+            </div>
           </div>
 
           <div className="topbar-actions">
-            <div
+            {isAuthenticated && <div
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1096,14 +1087,16 @@ export default function App() {
                 }}
               />
               {dbStatus === 'connected' ? 'MySQL (Prisma): Connected' : 'MySQL: Offline'}
-            </div>
+            </div>}
 
-            <div className="userchip">
+            {isAuthenticated ? (<div className="userchip">
               <button type="button" className={"profile-trigger "+(currentPage === "profile" ? "active" : "")} onClick={() => setCurrentPage("profile")} aria-label="เปิดโปรไฟล์" aria-pressed={currentPage === "profile"}><span className="profile-meta"><strong>{profile.name}</strong><span>{profile.email}</span></span><span className={"avatar "+(currentPage === "profile" ? "active" : "")} aria-hidden="true">{getInitials(profile.name)}</span></button>
               <button className="btn ghost" onClick={handleLogout} style={{ padding: '6px 12px', fontSize: 14 }} title="ออกจากระบบ">
                 Logout
               </button>
-            </div>
+            </div>) : (
+              <div className="guest-actions"><button type="button" className="btn secondary" onClick={() => setCurrentPage('login')}>Sign In</button><button type="button" className="btn primary" onClick={() => setCurrentPage('register')}>Register</button></div>
+            )}
           </div>
         </header>
 
@@ -1129,8 +1122,10 @@ export default function App() {
               <Icon name="check" /> {saveToast}
             </div>
           )}
+          {(!isAuthenticated || currentPage === 'home') && <Home authenticated={isAuthenticated} onNavigate={setCurrentPage} />}
+          {isAuthenticated && <>
           {/* DASHBOARD PAGE */}
-          <section style={{ display: currentPage === 'dashboard' ? 'block' : 'none' }}>
+          <section style={{ display: isAuthenticated && currentPage === 'dashboard' ? 'block' : 'none' }}>
             <h1 className="page-title" id="page-title-dashboard" tabIndex={-1}>Dashboard</h1>
             <div className="page-sub">ภาพรวมการวิเคราะห์และการปรับเทียบสีรอยฟกช้ำ</div>
 
@@ -1232,7 +1227,7 @@ export default function App() {
           </section>
 
           {/* NEW ANALYSIS PAGE */}
-          <section style={{ display: currentPage === 'analysis' ? 'block' : 'none' }}>
+          <section style={{ display: isAuthenticated && currentPage === 'analysis' ? 'block' : 'none' }}>
             <h1 className="page-title" id="page-title-analysis" tabIndex={-1}>New Analysis</h1>
             <div className="page-sub">อัปโหลดภาพ ตรวจจับการ์ด ปรับเทียบสี และวิเคราะห์รอยฟกช้ำ</div>
 
@@ -1566,7 +1561,7 @@ export default function App() {
           </section>
 
           {/* HISTORY PAGE */}
-          <section style={{ display: currentPage === 'history' ? 'block' : 'none' }}>
+          <section style={{ display: isAuthenticated && currentPage === 'history' ? 'block' : 'none' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
               <div>
                 <h1 className="page-title" style={{ marginBottom: 4 }} id="page-title-history" tabIndex={-1}>Analysis History</h1>
@@ -1703,7 +1698,7 @@ export default function App() {
           </section>
 
           {/* PROFILE PAGE */}
-          <section style={{ display: currentPage === 'profile' ? 'block' : 'none' }}>
+          <section style={{ display: isAuthenticated && currentPage === 'profile' ? 'block' : 'none' }}>
             <h1 className="page-title" id="page-title-profile" tabIndex={-1}>Profile</h1>
             <div className="page-sub">ข้อมูลบัญชีผู้ใช้งานทางคลินิก (Clinical Research Account)</div>
 
@@ -1761,6 +1756,7 @@ export default function App() {
               </div>
             </div>
           </section>
+          </>}
         </main>
       </div>
 

@@ -584,7 +584,7 @@ canvas.chart {
 
 .filters {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-columns: 2fr 1fr;
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -1015,3 +1015,31 @@ button.auth-tab.active { background-color: var(--white); }
 }
 
 .capture-loading { min-height: 420px; border-radius: 16px; background: var(--surface-soft); display: grid; place-items: center; color: var(--muted); }
+
+.analysis-error { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; }
+.analysis-error-message { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
+
+/* A4 reports must wrap table content instead of clipping screen-sized columns. */
+@media print {
+  html:has(.case-report), body:has(.case-report) { overflow: visible !important; height: auto !important; max-height: none !important; }
+  .case-report.modal-dialog { border-radius: 0; }
+  .case-report .analysis-details { display: block; }
+  .case-report .card { overflow: visible; break-inside: auto; }
+  .case-report .card-h, .case-report h2, .case-report h3 { break-after: avoid; }
+  .case-report .card-b { padding: 12px; }
+  .case-report .measured-table { overflow: visible; }
+  .case-report .tbl-wrap { height: auto !important; max-height: none !important; overflow: visible !important; }
+  .case-report table { table-layout: fixed; width: 100%; min-width: 0; max-width: 100%; font-size: 8pt !important; }
+  .case-report th, .case-report td { padding: 5px 4px; white-space: normal !important; overflow-wrap: anywhere; line-height: 1.4; vertical-align: top; }
+  .case-report .calibration-table th:nth-child(1) { width: 7%; }
+  .case-report .calibration-table th:nth-child(2) { width: 14%; }
+  .case-report .calibration-table th:nth-child(3),
+  .case-report .calibration-table th:nth-child(4),
+  .case-report .calibration-table th:nth-child(5) { width: 15%; }
+  .case-report .calibration-table th:nth-child(6) { width: 12%; }
+  .case-report .calibration-table th:nth-child(7) { width: 10%; }
+  .case-report .calibration-table th:nth-child(8) { width: 12%; }
+  .case-report thead { display: table-header-group; }
+  .case-report tr, .case-report .measured-colour, .case-report .callout { break-inside: avoid; }
+  .case-report .modal-body > .callout { font-size: 9pt !important; line-height: 1.5; padding: 8px 10px; }
+}

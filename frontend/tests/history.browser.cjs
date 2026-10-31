@@ -3,6 +3,14 @@ const dist = path.resolve(__dirname, '../dist'), profile = fs.mkdtempSync(path.j
 const channel = { r: Array(32).fill(10), g: Array(32).fill(15), b: Array(32).fill(9) };
 const row = { name: 'Test colour', hex: '#BB8763', rgb: [187, 135, 99], percent: 100, scale_match: 'Skin scale 6', de00: 7.1576 };
 const analysis = { filename: 'synthetic.jpg', has_wound: true, calibration: { is_calibrated: true, status: 'Calibrated', loocv_median_de00: 0 }, color_profile: { mean_rgb: [187, 135, 99], mean_lightness: 60, dominant_colors: [{ name: 'Scale', hex: '#BB8763', percent: 100 }] }, measured_colours: { skin: [row], wound: [row] }, wound_size: { status: 'Measured', width_cm: 4.75, length_cm: 6.04, area_cm2: 11.9 }, age_estimate: { range: null, confidence: 'Limited', confidence_score: 0, reason: 'Fixture' }, histograms: { skin: { bins: Array.from({ length: 32 }, (_, i) => i * 8), raw: channel, cal: channel }, wound: { bins: Array.from({ length: 32 }, (_, i) => i * 8), raw: channel, cal: channel } } };
+
+analysis.calibration.table=Array.from({length:16},(_,i)=>({
+    kind:i<10?'skin':'bruise',
+    name:i===15?'Final patch':i<10?'\u0e2a\u0e35\u0e40\u0e19\u0e37\u0e49\u0e2d\u0e0a\u0e48\u0e2d\u0e07 '+(i+1):'\u0e40\u0e02\u0e35\u0e22\u0e27\u0e2d\u0e21\u0e40\u0e2b\u0e25\u0e37\u0e2d\u0e07',
+    rgb_captured:[254,254,242],rgb_corrected:[246,238,227],rgb_reference:[244,233,223],
+    de00_before:15.88,de00_after:1.91,loocv_de00:i===15?9.8765:5.29
+}));
+
 let records = [{ id: '1', patientId: 'CASE-SAVED', createdAt: '2026-10-31T01:00:00Z', imageFilename: 'synthetic.jpg', woundLocation: 'Arm', deltaE00: 0, resultJson: analysis }], deleteFail = true, authExpired = false, analysisFail = false, profileFail = false;
 const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
@@ -108,6 +116,13 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         assert.ok(await ev("document.querySelector('.case-report').getBoundingClientRect().height>500&&getComputedStyle(document.querySelector('.app-view')).display!=='none'"), 'Print visible');
         assert.ok(await ev("getComputedStyle(document.querySelector('.topbar')).display==='none'"), 'Print hides menu');
         assert.ok(await ev("[...document.querySelectorAll('.case-report details')].every(d=>d.open)"), 'Print expands tables');
+
+        const printMetrics=await ev("(()=>{const table=document.querySelector('.calibration-table'),last=table.querySelector('tbody tr:last-child td:last-child');return {fits:table.scrollWidth<=table.clientWidth+1,lastInside:last.getBoundingClientRect().right<=table.closest('.card').getBoundingClientRect().right+1,rows:table.tBodies[0].rows.length,font:getComputedStyle(table).fontSize}})()");
+        assert.ok(printMetrics.fits&&printMetrics.lastInside,'All calibration columns fit the print card');
+        assert.equal(printMetrics.rows,16);
+        const pdf=await send('Page.printToPDF',{preferCSSPageSize:true,printBackground:true,scale:1});
+        fs.writeFileSync(path.join(profile,'report-a4.pdf'),Buffer.from(pdf.data,'base64'));
+
         const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }), screenshot = path.join(profile, 'print-preview.png');
         fs.writeFileSync(screenshot, Buffer.from(shot.data, 'base64'));
         await ev("window.dispatchEvent(new Event('afterprint'))");

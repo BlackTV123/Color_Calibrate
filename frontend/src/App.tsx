@@ -469,7 +469,6 @@ export default function App() {
   // History filters
   const [searchHistory, setSearchHistory] = useState('');
   const [filterAge, setFilterAge] = useState('');
-  const [filterCal, setFilterCal] = useState('');
 
   // Clear any active uploaded image and form whenever user account changes
   useEffect(() => {
@@ -892,8 +891,7 @@ export default function App() {
     const q = searchHistory.toLowerCase();
     const matchQ = !q || [item.caseId, item.file, item.bodySite, item.notes || ''].join(' ').toLowerCase().includes(q);
     const matchAge = !filterAge || item.age === filterAge;
-    const matchCal = !filterCal || (filterCal === 'yes' ? item.calibrated : !item.calibrated);
-    return matchQ && matchAge && matchCal;
+    return matchQ && matchAge;
   });
 
   const calibratedCount = history.filter(h => h.calibrated).length;
@@ -1424,9 +1422,9 @@ export default function App() {
 
                   {isAnalyzing && <p role="status" className="small" style={{ marginTop: 12 }}>กำลังวิเคราะห์ภาพ กรุณารอ คุณไม่ต้องอัปโหลดภาพซ้ำ</p>}
                   {analysisError && (
-                    <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14 }} role="alert" id="analysis-error">
-                      {analysisError}
-                    {file && <button type="button" className="btn secondary" onClick={runAnalysis} disabled={isAnalyzing} style={{ marginTop: 12 }}>ลองวิเคราะห์อีกครั้ง</button>}
+                    <div className="analysis-error" style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14 }} role="alert" id="analysis-error">
+                      <p className="analysis-error-message">{analysisError}</p>
+                    {file && <button type="button" className="btn secondary" onClick={runAnalysis} disabled={isAnalyzing}>ลองวิเคราะห์อีกครั้ง</button>}
                     </div>
                   )}
                 </div>
@@ -1600,15 +1598,6 @@ export default function App() {
                     <option value="7–10 วัน">7–10 วัน</option>
                     <option value="10–14 วัน">10–14 วัน</option>
                   </select>
-                  <select
-                    className="input"
-                    value={filterCal}
-                    onChange={e => setFilterCal(e.target.value)}
-                   id="history-calibration" name="history-calibration" aria-label="กรองสถานะการปรับสี">
-                    <option value="">All calibration</option>
-                    <option value="yes">Calibrated</option>
-                    <option value="no">Not calibrated</option>
-                  </select>
                 </div>
 
                 <div className="tbl-wrap" role="region" aria-label="ประวัติการวิเคราะห์" tabIndex={0}>
@@ -1631,7 +1620,7 @@ export default function App() {
                         <tr>
                           <td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>
 {isLoadingHistory ? 'กำลังโหลดประวัติ...' : history.length ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ยังไม่มีประวัติการวิเคราะห์'}
-                            {!isLoadingHistory && <div style={{ marginTop: 12 }}>{history.length ? <button className="btn secondary" onClick={() => { setSearchHistory(''); setFilterAge(''); setFilterCal(''); }}>ล้างตัวกรอง</button> : <button className="btn primary" onClick={() => setCurrentPage('analysis')}>เริ่มวิเคราะห์ภาพ</button>}</div>}
+                            {!isLoadingHistory && <div style={{ marginTop: 12 }}>{history.length ? <button className="btn secondary" onClick={() => { setSearchHistory(''); setFilterAge(''); }}>ล้างตัวกรอง</button> : <button className="btn primary" onClick={() => setCurrentPage('analysis')}>เริ่มวิเคราะห์ภาพ</button>}</div>}
                           </td>
                         </tr>
                       ) : (

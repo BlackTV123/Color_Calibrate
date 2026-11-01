@@ -6,14 +6,7 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
-const source = fs.readFileSync(path.join(__dirname, '../src/AnalysisDetails.tsx'), 'utf8')
-  .replace("import './analysis-details.css';", '');
-const code = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-}).outputText;
-const compiled = { exports: {} };
-new Function('require', 'module', 'exports', code)(require, compiled, compiled.exports);
-const Details = compiled.exports.default;
+const Details = require('./load-source.cjs').loadSource('AnalysisDetails.tsx').default;
 
 test('UTF-8 headings and colour values render from API data', () => {
   const row = { name: '\u0e19\u0e49\u0e33\u0e15\u0e32\u0e25\u0e40\u0e02\u0e49\u0e21', hex: '#652C0B', rgb: [101, 44, 11],

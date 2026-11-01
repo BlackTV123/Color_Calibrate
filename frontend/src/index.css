@@ -1043,3 +1043,86 @@ button.auth-tab.active { background-color: var(--white); }
   .case-report tr, .case-report .measured-colour, .case-report .callout { break-inside: avoid; }
   .case-report .modal-body > .callout { font-size: 9pt !important; line-height: 1.5; padding: 8px 10px; }
 }
+
+.history-table td:nth-child(7) .badge, .history-table td:nth-child(8) .badge { white-space: nowrap; }
+
+/* Password visibility controls share the existing input and focus styles. */
+.password-field { position: relative; min-width: 0; }
+.password-field .input { padding-right: 52px; }
+.password-toggle {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.password-toggle:hover { background: var(--surface-soft); color: var(--ink); }
+.password-toggle .ui-icon { width: 20px; height: 20px; }
+
+.password-policy {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.password-policy-name { margin: 0 0 6px; color: var(--ink); font-weight: 700; }
+.password-policy ul { margin: 0; padding-left: 20px; }
+.password-policy li + li { margin-top: 4px; }
+
+.registration-email-hint { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+/* Language controls stay available on public, auth and account pages. */
+.language-switcher {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+.language-switcher button {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.language-switcher button[aria-pressed="true"] { background: var(--navy); color: var(--white); font-weight: 700; }
+.auth-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.auth-header { flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .auth-header { gap: 12px; }
+  .auth-actions { margin-left: auto; }
+  .auth-brand { font-size: 13px; gap: 8px; }
+  .auth-actions .btn { padding-inline: 10px; }
+  .topbar-actions { flex-wrap: wrap; gap: 8px; }
+}
+@media print { .language-switcher { display: none !important; } }
+
+.report-actions { flex-wrap: wrap; max-width: 100%; }
+
+/* Keep case IDs and dates readable while the history region scrolls on small screens. */
+.history-table { min-width: 1120px; table-layout: auto; }
+.history-table td:nth-child(2), .history-table td:nth-child(3) { white-space: nowrap; }
+.history-scroll-hint { display: none; margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+.registration-form { margin-top: 24px; }
+.password-field input::-ms-reveal, .password-field input::-ms-clear { display: none; }
+@media (max-width: 768px) { .history-scroll-hint { display: block; } }
+@media print { .history-scroll-hint { display: none; } }
+
+.history-table td:last-child { min-width: 240px; }

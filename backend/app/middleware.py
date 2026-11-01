@@ -25,8 +25,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Get client IP (support reverse-proxy headers like X-Forwarded-For)
-        forwarded = request.headers.get("x-forwarded-for")
-        client_ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "127.0.0.1")
+        client_ip = request.client.host if request.client else "127.0.0.1"
 
         # Determine rate limit bucket
         limit, window = RATE_LIMITS.get(path, RATE_LIMITS["default_api"])
@@ -63,6 +62,22 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class RequestProtectionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        from app.auth.security import COOKIE_SECURE
+        if COOKIE_SECURE and request.url.scheme != "https":
+            return JSONResponse({"detail": "HTTPS is required"}, status_code=400)
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.url.path.startswith("/api"):
+            # A custom header cannot be sent by a cross-site HTML form. No cross-origin
+            # credentials are allowed; reverse proxies must preserve the public Host.
+            bearer = request.headers.get("authorization", "").startswith("Bearer ")
+            origin = request.headers.get("origin")
+            if not bearer and (request.headers.get("x-requested-with") != "BruiseWeb"
+                               or (origin and origin != str(request.base_url).rstrip("/"))):
+                return JSONResponse({"detail": "Invalid request origin"}, status_code=403)
+        return await call_next(request)
+
+
 class CacheControlAndSecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
@@ -82,5 +97,7 @@ class CacheControlAndSecurityMiddleware(BaseHTTPMiddleware):
         # Security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
 
         return response

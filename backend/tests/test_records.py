@@ -11,7 +11,7 @@ from app.auth import create_access_token
 
 @pytest.fixture
 def records_client(monkeypatch):
-    user = SimpleNamespace(id=7, email="owner@example.test")
+    user = SimpleNamespace(id=7, email="owner@example.test", name="Owner", role="Clinician", org="Lab")
     record = SimpleNamespace(
         id=12, userId=7, patientId="CASE-1", woundLocation="Arm", imageFilename="photo.jpg",
         estimatedAge="", confidence=0.0, deltaE00=0.0, surfaceAreaMm2=120.0,
@@ -44,7 +44,7 @@ def records_client(monkeypatch):
 @pytest.mark.parametrize("authorization", [None, "Bearer invalid"])
 def test_records_require_valid_login(records_client, method, path, body, authorization):
     client, database, _ = records_client
-    headers = {"Authorization": authorization} if authorization else {}
+    headers = {"X-Requested-With": "BruiseWeb", **({"Authorization": authorization} if authorization else {})}
     options = {"json": body} if body is not None else {}
     response = client.request(method, path, headers=headers, **options)
     assert response.status_code == 401

@@ -11,20 +11,28 @@ analysis.calibration.table=Array.from({length:16},(_,i)=>({
     de00_before:15.88,de00_after:1.91,loocv_de00:i===15?9.8765:5.29
 }));
 
-let records = [{ id: '1', patientId: 'CASE-SAVED', createdAt: '2026-10-31T01:00:00Z', imageFilename: 'synthetic.jpg', woundLocation: 'Arm', deltaE00: 0, resultJson: analysis }], deleteFail = true, authExpired = false, analysisFail = false, profileFail = false;
+let records = [{ id: '1', patientId: 'CASE-SAVED', estimatedAge: '10\u201314 \u0e27\u0e31\u0e19', createdAt: '2026-10-31T01:00:00Z', imageFilename: 'synthetic.jpg', woundLocation: 'Arm', deltaE00: 0, resultJson: analysis }], deleteFail = true, authExpired = false, analysisFail = false, profileFail = false, logoutFail = false;
 const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     res.setHeader('Cache-Control', 'no-store');
     if (pathname.startsWith('/api/')) {
         res.setHeader('Content-Type', 'application/json');
+        assert.equal(req.headers.authorization, undefined, 'Browser must never send a localStorage bearer token');
+        if (['POST','PUT','DELETE','PATCH'].includes(req.method)) {
+            assert.equal(req.headers['x-requested-with'], 'BruiseWeb', 'Cookie writes include CSRF protection');
+        }
         if ((pathname === '/api/auth/me' || pathname.startsWith('/api/records')) && authExpired) {
             res.statusCode = 401;
             return res.end('{"detail":"Expired session"}');
         }
         if (pathname === '/api/auth/me')
             return res.end(JSON.stringify({ success: true, user: { sub: '7', email: 'qa@example.test', name: 'QA' } }));
+        if (pathname === '/api/auth/logout') {
+            if (logoutFail) { res.statusCode = 503; return res.end('{}'); }
+            return res.end('{"success":true}');
+        }
         if (pathname === '/api/auth/login')
-            return res.end(JSON.stringify({ success: true, access_token: 'qa-new-token', user: { id: 7, email: 'qa@example.test', name: 'QA' } }));
+            return res.end(JSON.stringify({ success: true, session_authenticated: true, user: { id: 7, email: 'qa@example.test', name: 'QA' } }));
         if (pathname === '/api/analyze') {
             req.resume();
             if (analysisFail) { res.statusCode = 500; return res.end('{"detail":"Analysis service unavailable"}'); }
@@ -90,7 +98,7 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await send('Page.enable');
         await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
         const local = { id: 'local-qa', clientId: 'qa', syncStatus: 'pending', date: '2026-10-31T02:00:00Z', caseId: 'CASE-PENDING', file: 'synthetic.jpg', bodySite: 'Arm', age: 'N/A', calibrated: true, colors: ['#BB8763'], resultJson: analysis };
-        const initial = { 'bcc_session_v1': '1', 'bcc_token_v1': 'qa-test-token', 'bcc_profile_v1': JSON.stringify({ name: 'QA', email: 'qa@example.test', note: '' }), 'bcc_history_qa@example.test': JSON.stringify([local]) };
+        const initial = { 'bcc_language_v1': 'en', 'bcc_session_v1': '1', 'bcc_session_marker_v2': 'qa-test-token', 'bcc_profile_v1': JSON.stringify({ name: 'QA', email: 'qa@example.test', note: '' }), 'bcc_history_qa@example.test': JSON.stringify([local]) };
         await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.confirm=()=>true;if(!localStorage.getItem('bcc_qa_init')){localStorage.setItem('bcc_qa_init','1');for(const [k,v] of Object.entries(" + JSON.stringify(initial) + "))localStorage.setItem(k,v);}" });
         await send('Page.navigate', { url: 'http://127.0.0.1:' + server.address().port + '/' });
         const openHistory = "[...document.querySelectorAll('.navitem')].find(e=>e.textContent.includes('Analysis History')).click()";
@@ -99,6 +107,42 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await wait("document.querySelector('#primary-navigation')?.open", 'Open navigation');
         await ev(openHistory);
         await wait("document.body.innerText.includes('CASE-SAVED')&&document.body.innerText.includes('CASE-PENDING')", 'records');
+
+        const chooseLanguage=async (language, report=false)=>{
+          await ev("document.querySelector(" + JSON.stringify((report?'.case-report ':'.topbar ')+'.language-switcher button[lang='+language+']') + ").click()");
+          await wait("document.documentElement.lang==="+JSON.stringify(language),'Language '+language);
+        };
+        const captureLanguage=async name=>{
+          const result=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
+          fs.writeFileSync(path.join(profile,name+'.png'),Buffer.from(result.data,'base64'));
+        };
+        const sessionBeforeLanguage=await ev("localStorage.getItem('bcc_session_marker_v2')");
+        for(const width of [320,390,1440]){
+          await send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
+          for(const language of ['th','en']){
+            await chooseLanguage(language);
+            assert.equal(await ev("document.querySelector('#page-title-history').textContent"),language==='th'?'\u0e1b\u0e23\u0e30\u0e27\u0e31\u0e15\u0e34\u0e01\u0e32\u0e23\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c':'Analysis History');
+            assert.ok(await ev("document.body.textContent.includes('CASE-SAVED')&&document.body.textContent.includes('CASE-PENDING')"));
+            assert.ok(await ev("document.documentElement.scrollWidth<=innerWidth"),'Bilingual history fits '+width);
+            assert.ok(await ev("[...document.querySelectorAll('.history-table tbody tr')].every(row=>row.getBoundingClientRect().height<220)"),'History rows remain readable');
+            await captureLanguage('history-'+language+'-'+width);
+          }
+        }
+        assert.equal(await ev("localStorage.getItem('bcc_session_marker_v2')"),sessionBeforeLanguage);
+        await chooseLanguage('th');
+        await send('Page.reload');
+        await wait("document.documentElement.lang==='th'&&document.body.textContent.includes('CASE-PENDING')",'Thai preference survives reload');
+        await chooseLanguage('en');
+        await send('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
+
+        const unavailableAge = 'Not yet available';
+        assert.ok(await ev("[...document.querySelectorAll('section[style*=block] tbody td:nth-child(6)')].every(e=>e.textContent.trim()==="+JSON.stringify(unavailableAge)+")"),'Legacy ages display unavailable');
+        assert.ok(await ev("document.querySelector('#history-age option').textContent==='All age ranges'&&[...document.querySelector('#history-age').options].some(o=>o.value==='10\u201314 \u0e27\u0e31\u0e19')"),'Age filter options preserved');
+        await ev("(()=>{const s=document.querySelector('#history-age');s.value='10\u201314 \u0e27\u0e31\u0e19';s.dispatchEvent(new Event('change',{bubbles:true}));})()");
+        await wait("document.querySelectorAll('section[style*=block] tbody tr').length===1&&document.querySelector('section[style*=block] tbody').textContent.includes('CASE-SAVED')",'Legacy age filtering still works');
+        await ev("(()=>{const s=document.querySelector('#history-age');s.value='';s.dispatchEvent(new Event('change',{bubbles:true}));})()");
+        await wait("document.querySelectorAll('section[style*=block] tbody tr').length===2",'Clear age filter');
+
         await wait("localStorage.getItem('bcc_history_qa@example.test')===null", 'IndexedDB migration');
         await send('Page.reload');
         await wait("!!document.querySelector('.navitems')", 'reload');
@@ -109,8 +153,34 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         const savedRow = "[...document.querySelectorAll('section')].find(s=>s.style.display==='block'&&s.innerText.includes('Analysis History')).querySelectorAll('tbody tr')";
         await ev(savedRow + ".forEach(tr=>{if(tr.innerText.includes('CASE-SAVED'))[...tr.querySelectorAll('button')].find(b=>b.textContent.includes('View Detail')).click()})");
         await wait("!!document.querySelector('.case-report')", 'report');
+        assert.ok(await ev("!document.querySelector('.case-report').innerText.includes('10\u201314')"),'Report hides legacy day ranges');
+
+        const measuredBeforeLanguage=await ev("[...document.querySelectorAll('.case-report .measured-values')].map(e=>e.textContent)");
+        for(const width of [320,390,1440]){
+          await send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
+          for(const language of ['th','en']){
+            await chooseLanguage(language,true);
+            assert.deepEqual(await ev("[...document.querySelectorAll('.case-report .measured-values')].map(e=>e.textContent)"),measuredBeforeLanguage,'Report values unchanged');
+            assert.ok(await ev("document.querySelector('#case-report-title').textContent.includes('CASE-SAVED')"));
+            assert.ok(await ev("document.documentElement.scrollWidth<=innerWidth"),'Bilingual report fits '+width);
+            await captureLanguage('report-'+language+'-'+width);
+          }
+        }
+        await send('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
+
         assert.equal(await ev("document.querySelectorAll('.case-report figure').length"), 6);
         assert.ok(await ev("document.querySelector('.case-report').textContent.includes('7.1576')"));
+
+        await chooseLanguage('th',true);
+        await send('Emulation.setEmulatedMedia',{media:'print'});
+        await ev("window.dispatchEvent(new Event('beforeprint'))");
+        assert.ok(await ev("(()=>{const table=document.querySelector('.calibration-table');return table.scrollWidth<=table.clientWidth+1})()"),'Thai print table fits');
+        const thaiPdf=await send('Page.printToPDF',{preferCSSPageSize:true,printBackground:true,scale:1});
+        fs.writeFileSync(path.join(profile,'report-th-a4.pdf'),Buffer.from(thaiPdf.data,'base64'));
+        await send('Emulation.setEmulatedMedia',{media:'screen'});
+        await ev("window.dispatchEvent(new Event('afterprint'))");
+        await chooseLanguage('en',true);
+
         await send('Emulation.setEmulatedMedia', { media: 'print' });
         await ev("window.dispatchEvent(new Event('beforeprint'))");
         assert.ok(await ev("document.querySelector('.case-report').getBoundingClientRect().height>500&&getComputedStyle(document.querySelector('.app-view')).display!=='none'"), 'Print visible');
@@ -163,6 +233,14 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
         await wait("!document.querySelector('.case-report')",'Escape closes report');
         assert.ok(await ev("document.activeElement.textContent.includes('View Detail')&&!document.querySelector('.main').inert"),'Dialog restores focus and background');
+
+        await nav('Dashboard');
+        for(const language of ['th','en']){
+          await chooseLanguage(language);
+          assert.ok(await ev("document.body.textContent.includes('CASE-PENDING')"));
+          await captureLanguage('dashboard-'+language);
+        }
+
         await nav('New Analysis');
         await ev("(()=>{const dt=new DataTransfer();dt.items.add(new File(['text'],'notes.txt',{type:'text/plain'}));const i=document.querySelector('#imageFileInput');i.files=dt.files;i.dispatchEvent(new Event('change',{bubbles:true}));})()");
         await wait("!!document.querySelector('#analysis-error')",'Unsupported file feedback');
@@ -172,8 +250,16 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});
         await wait("!!document.querySelector('.ref-pill')",'Keyboard RGB reading');
         await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
+
+        const analysisBeforeLanguage=await ev("({caseId:document.querySelector('#caseId').value,file:document.querySelector('#imageFileInput').files[0].name,bodySite:document.querySelector('#body-site').value,notes:document.querySelector('#analysis-notes').value})");
+        for(const language of ['th','en']){
+          await chooseLanguage(language);
+          assert.deepEqual(await ev("({caseId:document.querySelector('#caseId').value,file:document.querySelector('#imageFileInput').files[0].name,bodySite:document.querySelector('#body-site').value,notes:document.querySelector('#analysis-notes').value})"),analysisBeforeLanguage,'Image and case form unchanged');
+          await captureLanguage('analysis-'+language);
+        }
+
         analysisFail=true;
-        await ev("[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Analyze Photo & Bruise')).click()");
+        await ev("document.querySelector('#analysis-submit').click()");
         await wait("!!document.querySelector('#analysis-error')",'Analysis failure visible');
         assert.equal(await ev("document.querySelectorAll('.histogram-plot').length"),0,'Failure must not manufacture results');
         assert.ok(await ev("document.querySelector('#imageFileInput').files[0].name==='audit.png'"),'Failure preserves input');
@@ -191,6 +277,13 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         profileFail=false;
         await ev("document.querySelector('form[aria-busy]').requestSubmit()");
         await wait("document.querySelector('#profile-feedback')?.getAttribute('role')==='status'",'Profile success announced');
+
+        for(const language of ['th','en']){
+          await chooseLanguage(language);
+          assert.equal(await ev("document.querySelector('#profile-name').value"),'QA updated name');
+          await captureLanguage('profile-'+language);
+        }
+
         await nav('Analysis History');
         console.log('PASS: UI audit keyboard, form labels, five viewport widths, dialog trap/Escape/focus restoration, validated upload, API error/retry, and profile failure/success');
         // Reject an expired session even though a complete offline cache exists.
@@ -200,7 +293,7 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await ev("[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Auto 20s')).click()");
         await wait("!!document.querySelector('.login-view')", '401 returns to sign in');
         assert.ok(await ev("!document.body.textContent.includes('CASE-PENDING') && !document.querySelector('.case-report')"), 'Expired session hides saved and cached data');
-        assert.equal(await ev("localStorage.getItem('bcc_token_v1')"), null);
+        assert.equal(await ev("localStorage.getItem('bcc_session_marker_v2')"), null);
         assert.ok(await ev(cachedPending), 'Pending cache is retained after expiry');
         authExpired = false;
         await ev("document.querySelector('input[type=password]').focus()");
@@ -212,7 +305,7 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await ev(openHistory);
         await wait("document.body.innerText.includes('CASE-PENDING')", 'Pending cache recovered after sign in');
         authExpired = true;
-        await ev("localStorage.setItem('bcc_token_v1','expired-on-startup');localStorage.setItem('bcc_session_v1','1')");
+        await ev("localStorage.setItem('bcc_session_marker_v2','expired-on-startup');localStorage.setItem('bcc_session_v1','1')");
         await send('Page.reload');
         await wait("!!document.querySelector('.login-view')", 'Expired startup session rejected');
         assert.ok(await ev("!document.body.textContent.includes('CASE-PENDING') && !document.querySelector('.navitems')"));
@@ -224,6 +317,18 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await wait("!!document.querySelector('.home-hero')",'Public Home');
         assert.ok(await ev("!document.querySelector('.login-view')&&!document.querySelector('#profile-email')&&!document.body.textContent.includes('CASE-PENDING')"),'Home exposes no private workspace');
 
+
+
+        for(const width of [320,390,1440]){
+          await send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
+          for(const language of ['th','en']){
+            await chooseLanguage(language);
+            assert.ok(await ev("document.documentElement.scrollWidth<=innerWidth"),'Bilingual home fits '+width);
+            assert.ok(await ev("!!document.querySelector('.home-hero h1').textContent.trim()"));
+            await captureLanguage('home-'+language+'-'+width);
+          }
+        }
+        await send('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
 
         await wait("document.querySelector('.capture-illustration')?.dataset.ready==='true'",'Clay assets loaded');
         await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:8,y:100});
@@ -319,6 +424,33 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await ev("[...document.querySelectorAll('.navitem')].find(e=>e.textContent.includes('New Analysis')).click()");
         await wait("!!document.querySelector('#page-title-login')",'Protected route requires login');
         assert.ok(await ev("location.hash==='#login'&&!document.querySelector('#caseId')"),'Guest cannot open workspace');
+
+        await ev("document.querySelectorAll('.auth-tab')[1].click()");
+        await wait("!!document.querySelector('#register-password')",'Bilingual registration');
+        for(const [id,value] of [['register-name','Bilingual QA'],['register-email','bilingual.qa@gmail.com'],['register-password','A test passphrase 123!'],['register-password-confirm','A test passphrase 123!']]){
+          await ev("document.querySelector('#"+id+"').focus()");
+          await send('Input.insertText',{text:value});
+        }
+        await ev("document.querySelector('[aria-controls=register-password]').click()");
+        const formBeforeLanguage=await ev("[...document.querySelectorAll('.login-box input')].map(e=>({id:e.id,value:e.value,type:e.type,pattern:e.pattern}))");
+        for(const width of [320,390,1440]){
+          await send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
+          for(const language of ['th','en']){
+            await ev("document.querySelector('.auth-header .language-switcher button[lang="+language+"]').click()");
+            await wait("document.documentElement.lang==="+JSON.stringify(language),'Auth language '+language);
+            assert.deepEqual(await ev("[...document.querySelectorAll('.login-box input')].map(e=>({id:e.id,value:e.value,type:e.type,pattern:e.pattern}))"),formBeforeLanguage,'Typed registration and password visibility are preserved');
+            assert.ok(await ev("document.documentElement.scrollWidth<=innerWidth"),'Bilingual registration fits '+width);
+            const policy=await ev("document.querySelector('.password-policy').textContent");
+            assert.ok(policy.includes('15-128'));
+            assert.ok(language==='en'?policy.includes('English letters'):policy.includes('\u0e15\u0e31\u0e27\u0e2d\u0e31\u0e01\u0e29\u0e23\u0e2d\u0e31\u0e07\u0e01\u0e24\u0e29'));
+            await captureLanguage('register-'+language+'-'+width);
+          }
+        }
+        await ev("document.querySelectorAll('.auth-tab')[0].click()");
+        await wait("!!document.querySelector('#login-password')",'Back to login');
+        await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
+        console.log('PASS: Thai/English language persistence, navigation, unchanged form fields/password rules, report values and mobile/desktop layouts');
+
         const loginImage=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
         fs.writeFileSync(path.join(profile,'login-390.png'),Buffer.from(loginImage.data,'base64'));
         await ev("document.querySelector('#login-email').focus();document.querySelector('#login-email').select()");
@@ -327,6 +459,11 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
         await send('Input.insertText',{text:'qa-password'});
         await ev("document.querySelector('form').requestSubmit()");
         await wait("location.hash==='#analysis'&&!!document.querySelector('#caseId')",'Return to intended page after login');
+        logoutFail = true;
+        await ev("[...document.querySelectorAll('button')].find(e=>e.textContent.trim()==='Logout').click()");
+        await wait("!!document.querySelector('#caseId')&&!!document.querySelector('main [role=alert]')", 'Failed logout retains signed-in view and offers retry');
+        assert.ok(await ev("!!localStorage.getItem('bcc_session_marker_v2')"), 'Failed logout retains session marker');
+        logoutFail = false;
         await ev("[...document.querySelectorAll('button')].find(e=>e.textContent.trim()==='Logout').click()");
         await wait("!!document.querySelector('.home-hero')&&!document.querySelector('#caseId')",'Logout returns public Home');
         console.log('PASS: public Home, separate login/register routes, auth redirect/recovery, browser Back, four menu items, focus trap/Escape, and synthesized touch open/backdrop close');

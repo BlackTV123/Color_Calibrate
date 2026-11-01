@@ -1,5 +1,7 @@
-type IconName = 'upload' | 'image' | 'trash' | 'search' | 'print' | 'alert' | 'refresh' | 'lock' | 'close' | 'check' | 'menu' | 'home' | 'arrow-right';
+type IconName = 'eye' | 'eye-off' | 'upload' | 'image' | 'trash' | 'search' | 'print' | 'alert' | 'refresh' | 'lock' | 'close' | 'check' | 'menu' | 'home' | 'arrow-right';
 const paths: Record<IconName, string> = {
+  eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+  'eye-off': 'm3 3 18 18M10.6 5.1A13 13 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.2 4.1M6.1 6.1A19 19 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.1-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2',
   menu: 'M4 6h16M4 12h16M4 18h16',
   home: 'm3 11 9-8 9 8M5 10v11h5v-7h4v7h5V10',
   'arrow-right': 'M4 12h16m-6-6 6 6-6 6',

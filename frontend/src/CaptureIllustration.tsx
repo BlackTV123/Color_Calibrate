@@ -1,3 +1,4 @@
+import { t, useLanguage } from './i18n';
 import { useRef, useState } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
@@ -7,6 +8,7 @@ gsap.registerPlugin(useGSAP);
 type Phase = 'ready' | 'aiming' | 'flash' | 'captured';
 
 export default function CaptureIllustration() {
+  useLanguage();
   const root = useRef<HTMLElement>(null);
   const camera = useRef<HTMLDivElement>(null);
   const flash = useRef<HTMLDivElement>(null);
@@ -76,7 +78,7 @@ export default function CaptureIllustration() {
 
   return (
     <figure ref={root} className="capture-illustration" data-ready={ready} data-phase={phase} data-reduced={reduced}>
-      <button type="button" className="capture-stage" aria-label="ชี้ แตะ หรือกด Enter เพื่อจำลองกล้องถ่ายภาพมือคว่ำ"
+      <button type="button" className="capture-stage" aria-label={t("ชี้ แตะ หรือกด Enter เพื่อจำลองกล้องถ่ายภาพมือคว่ำ")}
         aria-describedby="capture-description" aria-disabled={!ready} aria-busy={!ready && !assetError}
         onPointerEnter={event => {
           if (event.pointerType === 'mouse') { pointerInside.current = true; shootRef.current?.(); }
@@ -98,11 +100,9 @@ export default function CaptureIllustration() {
             <span ref={flash} className="capture-burst" />
           </span>
           <span ref={light} className="capture-light" aria-hidden="true" />
-        </> : <span className="capture-unavailable">โหลดภาพประกอบไม่สำเร็จ กรุณารีเฟรชหน้าเว็บ</span>}
+        </> : <span className="capture-unavailable">{t("โหลดภาพประกอบไม่สำเร็จ กรุณารีเฟรชหน้าเว็บ")}</span>}
       </button>
-      <figcaption id="capture-description" className="sr-only">
-        ภาพ clay จำลองมือคว่ำที่มีรอยฟกช้ำและกล้องถ่ายภาพบนพื้นหลังเบลอ ไม่ใช่ผลวิเคราะห์จริง
-        <span role="status">{phase === 'captured' ? 'ถ่ายภาพจำลองแล้ว' : phase === 'flash' ? 'กำลังถ่ายภาพจำลอง' : 'พร้อมจำลองการถ่ายภาพ'}</span>
+      <figcaption id="capture-description" className="sr-only">{t("ภาพ clay จำลองมือคว่ำที่มีรอยฟกช้ำและกล้องถ่ายภาพบนพื้นหลังเบลอ ไม่ใช่ผลวิเคราะห์จริง")}<span role="status">{phase === 'captured' ? t("ถ่ายภาพจำลองแล้ว") : phase === 'flash' ? t("กำลังถ่ายภาพจำลอง") : t("พร้อมจำลองการถ่ายภาพ")}</span>
       </figcaption>
     </figure>
   );

@@ -10,8 +10,20 @@ export function validatePhotoFile(file: Pick<File, 'name' | 'type' | 'size'>): s
   return extension || mime ? null : 'รูปแบบไฟล์ไม่รองรับ กรุณาเลือก JPG, PNG, WebP, BMP, TIFF, GIF, AVIF หรือ HEIC/HEIF';
 }
 
-export function formatAgeEstimate(result: Pick<AnalysisResult, 'has_wound' | 'age_estimate'>): string {
-  return result.age_estimate?.range || (result.has_wound ? 'ยังประเมินช่วงวันไม่ได้' : 'ไม่พบรอยสีแผล');
+export function validateRegistrationPassword(password: string): string | null {
+  if ([...password].length < 15 || [...password].length > 128) {
+    return 'Password must be 15-128 characters long.';
+  }
+  if (/[^\x20-\x7E]/.test(password)) {
+    return 'Use only English letters (A-Z, a-z), numbers, symbols, and spaces.';
+  }
+  return null;
+}
+
+export const AGE_UNAVAILABLE = "ยังไม่สามารถระบุได้";
+
+export function formatAgeEstimate(_result?: Pick<AnalysisResult, 'has_wound' | 'age_estimate'>): string {
+  return AGE_UNAVAILABLE;
 }
 
 export function isLegacyDemo(result?: AnalysisResult | null): boolean {

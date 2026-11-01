@@ -1,3 +1,4 @@
+import { t, useLanguage } from './i18n';
 import { useEffect, useRef } from 'react';
 import Icon from './Icon';
 import type { Page } from './navigation';
@@ -12,6 +13,7 @@ const items: { page: Page; label: string }[] = [
 export default function NavigationDrawer({ open, page, authenticated, onClose, onNavigate }: {
   open: boolean; page: Page; authenticated: boolean; onClose: () => void; onNavigate: (page: Page) => void;
 }) {
+  useLanguage();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
@@ -45,18 +47,18 @@ export default function NavigationDrawer({ open, page, authenticated, onClose, o
           <span className="brand-icon" aria-hidden="true">BC</span>
           <span id="navigation-title">Bruise Color<br /><span className="brand-subtitle">Calibrate</span></span>
         </div>
-        <button type="button" className="drawer-close" onClick={onClose} aria-label="ปิดเมนู"><Icon name="close" /></button>
+        <button type="button" className="drawer-close" onClick={onClose} aria-label={t("ปิดเมนู")}><Icon name="close" /></button>
       </div>
-      <nav className="navitems" aria-label="เมนูหลัก">
+      <nav className="navitems" aria-label={t("เมนูหลัก")}>
         {items.map(item => (
-          <button key={item.page} type="button" className={'navitem ' + (page === item.page ? 'active' : '')}
+          <button key={item.page} data-page={item.page} type="button" className={'navitem ' + (page === item.page ? 'active' : '')}
             aria-current={page === item.page ? 'page' : undefined} onClick={() => onNavigate(item.page)}>
-            <span className="navdot" aria-hidden="true" />{item.label}
+            <span className="navdot" aria-hidden="true" />{t(item.label)}
           </button>
         ))}
       </nav>
-      {!authenticated && <p className="drawer-auth-note">เข้าสู่ระบบเพื่อวิเคราะห์ภาพและดูประวัติส่วนตัว</p>}
-      <div className="sidefoot"><b>Prototype v0.1</b><p>For research and clinical workflow demonstration only.</p></div>
+      {!authenticated && <p className="drawer-auth-note">{t("เข้าสู่ระบบเพื่อวิเคราะห์ภาพและดูประวัติส่วนตัว")}</p>}
+      <div className="sidefoot"><b>{t("Prototype v0.1")}</b><p>{t("For research and clinical workflow demonstration only.")}</p></div>
     </dialog>
   );
 }

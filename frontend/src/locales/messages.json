@@ -1,0 +1,1546 @@
+{
+  "เซสชันหมดอายุหรือยืนยันตัวตนไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่": {
+    "th": "เซสชันหมดอายุหรือยืนยันตัวตนไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่",
+    "en": "Your session has expired. Please sign in again."
+  },
+  "กรุณาเข้าสู่ระบบใหม่เพื่อยืนยันตัวตน": {
+    "th": "กรุณาเข้าสู่ระบบใหม่เพื่อยืนยันตัวตน",
+    "en": "Please sign in again to verify your account."
+  },
+  "ตรวจสอบการเข้าสู่ระบบไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง": {
+    "th": "ตรวจสอบการเข้าสู่ระบบไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง",
+    "en": "We couldn't verify your session. Check your connection and try again."
+  },
+  "ตรวจสอบการเข้าสู่ระบบไม่สำเร็จ": {
+    "th": "ตรวจสอบการเข้าสู่ระบบไม่สำเร็จ",
+    "en": "We couldn't verify your session."
+  },
+  "เก็บรายการรอซิงก์ในเครื่องไม่สำเร็จ กรุณาอย่าปิดหน้านี้จนกว่าจะบันทึก MySQL สำเร็จ": {
+    "th": "เก็บรายการรอซิงก์ในเครื่องไม่สำเร็จ กรุณาอย่าปิดหน้านี้จนกว่าจะบันทึก MySQL สำเร็จ",
+    "en": "We couldn't save your pending records on this device. Keep this page open until they are saved to the server."
+  },
+  "โหลดประวัติจาก MySQL ไม่สำเร็จ ข้อมูลในเครื่องยังอยู่": {
+    "th": "โหลดประวัติจาก MySQL ไม่สำเร็จ ข้อมูลในเครื่องยังอยู่",
+    "en": "We couldn't load your history from the server. Your local records are still available."
+  },
+  "ข้อมูลประวัติจากเซิร์ฟเวอร์ไม่ถูกต้อง": {
+    "th": "ข้อมูลประวัติจากเซิร์ฟเวอร์ไม่ถูกต้อง",
+    "en": "The server returned an invalid history response."
+  },
+  "โหลดประวัติไม่สำเร็จ": {
+    "th": "โหลดประวัติไม่สำเร็จ",
+    "en": "We couldn't load your history."
+  },
+  "รหัสผ่านต้องมีความยาวไม่เกิน 128 ตัวอักษร": {
+    "th": "รหัสผ่านต้องมีความยาวไม่เกิน 128 ตัวอักษร",
+    "en": "Passwords can be up to 128 characters long."
+  },
+  "อีเมลหรือรหัสผ่านไม่ถูกต้อง": {
+    "th": "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
+    "en": "The email or password is incorrect."
+  },
+  "เข้าสู่ระบบไม่สำเร็จ": {
+    "th": "เข้าสู่ระบบไม่สำเร็จ",
+    "en": "We couldn't sign you in."
+  },
+  "กรุณาใช้อีเมลที่ลงท้ายด้วย @gmail.com เท่านั้น": {
+    "th": "กรุณาใช้อีเมลที่ลงท้ายด้วย @gmail.com เท่านั้น",
+    "en": "Use an email address ending in @gmail.com."
+  },
+  "รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน": {
+    "th": "รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน",
+    "en": "The passwords don't match."
+  },
+  "การลงทะเบียนไม่สำเร็จ": {
+    "th": "การลงทะเบียนไม่สำเร็จ",
+    "en": "We couldn't complete your registration."
+  },
+  "รับคำขอสมัครสมาชิกแล้ว หากมีบัญชีอยู่แล้วให้เข้าสู่ระบบด้วยรหัสผ่านเดิม": {
+    "th": "รับคำขอสมัครสมาชิกแล้ว หากมีบัญชีอยู่แล้วให้เข้าสู่ระบบด้วยรหัสผ่านเดิม",
+    "en": "Your registration request has been received. If you already have an account, sign in with your existing password."
+  },
+  "เกิดข้อผิดพลาดในการลงทะเบียน": {
+    "th": "เกิดข้อผิดพลาดในการลงทะเบียน",
+    "en": "We couldn't complete your registration."
+  },
+  "ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง": {
+    "th": "ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง",
+    "en": "We couldn't sign you out. Please try again."
+  },
+  "ติดต่อเซิร์ฟเวอร์เพื่อออกจากระบบไม่ได้ กรุณาลองอีกครั้ง": {
+    "th": "ติดต่อเซิร์ฟเวอร์เพื่อออกจากระบบไม่ได้ กรุณาลองอีกครั้ง",
+    "en": "We couldn't reach the server to sign you out. Please try again."
+  },
+  "กรุณากรอกชื่อผู้ใช้": {
+    "th": "กรุณากรอกชื่อผู้ใช้",
+    "en": "Enter your name."
+  },
+  "บันทึกชื่อบนเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองอีกครั้ง": {
+    "th": "บันทึกชื่อบนเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองอีกครั้ง",
+    "en": "We couldn't save your name. Please try again."
+  },
+  "บันทึกชื่อผู้ใช้ใน MySQL แล้ว": {
+    "th": "บันทึกชื่อแล้ว",
+    "en": "Your name has been saved."
+  },
+  "ติดต่อเซิร์ฟเวอร์ไม่ได้ ข้อความที่กรอกยังอยู่ กรุณาลองอีกครั้ง": {
+    "th": "ติดต่อเซิร์ฟเวอร์ไม่ได้ ข้อความที่กรอกยังอยู่ กรุณาลองอีกครั้ง",
+    "en": "We couldn't reach the server. Your changes are still here. Please try again."
+  },
+  "เบราว์เซอร์แสดงตัวอย่างไฟล์นี้ไม่ได้ คุณยังส่งภาพไปวิเคราะห์กับ backend ได้": {
+    "th": "เบราว์เซอร์แสดงตัวอย่างไฟล์นี้ไม่ได้ คุณยังส่งภาพไปวิเคราะห์กับ backend ได้",
+    "en": "Your browser can't preview this file. You can still upload it for analysis."
+  },
+  "เซิร์ฟเวอร์วิเคราะห์ภาพไม่สำเร็จ กรุณาลองอีกครั้ง": {
+    "th": "เซิร์ฟเวอร์วิเคราะห์ภาพไม่สำเร็จ กรุณาลองอีกครั้ง",
+    "en": "We couldn't analyse this image. Please try again."
+  },
+  "รูปแบบผลวิเคราะห์จากเซิร์ฟเวอร์ไม่ถูกต้อง กรุณาลองอีกครั้ง": {
+    "th": "รูปแบบผลวิเคราะห์จากเซิร์ฟเวอร์ไม่ถูกต้อง กรุณาลองอีกครั้ง",
+    "en": "The server returned an invalid analysis response. Please try again."
+  },
+  "การวิเคราะห์ใช้เวลานานเกินไป กรุณาลองอีกครั้งหรือลดขนาดภาพ": {
+    "th": "การวิเคราะห์ใช้เวลานานเกินไป กรุณาลองอีกครั้งหรือลดขนาดภาพ",
+    "en": "The analysis timed out. Try again or use a smaller image."
+  },
+  "ติดต่อเซิร์ฟเวอร์วิเคราะห์ไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง": {
+    "th": "ติดต่อเซิร์ฟเวอร์วิเคราะห์ไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง",
+    "en": "We couldn't reach the analysis server. Check your connection and try again."
+  },
+  "บันทึก MySQL สำเร็จ": {
+    "th": "บันทึก MySQL สำเร็จ",
+    "en": "Your analysis has been saved to the server."
+  },
+  "ติดต่อ MySQL ไม่สำเร็จ": {
+    "th": "ติดต่อ MySQL ไม่สำเร็จ",
+    "en": "We couldn't connect to the database."
+  },
+  "ยังบันทึกทั้ง MySQL และในเครื่องไม่สำเร็จ กรุณาอย่าปิดหน้านี้และลองบันทึกอีกครั้ง": {
+    "th": "ยังบันทึกทั้ง MySQL และในเครื่องไม่สำเร็จ กรุณาอย่าปิดหน้านี้และลองบันทึกอีกครั้ง",
+    "en": "We couldn't save this analysis to the server or this device. Keep this page open and try again."
+  },
+  "บันทึกไม่สำเร็จ รายการยังรอซิงก์": {
+    "th": "บันทึกไม่สำเร็จ รายการยังรอซิงก์",
+    "en": "This record hasn't been saved yet. It is waiting to sync."
+  },
+  "ต้องการลบประวัติการวิเคราะห์รายการนี้หรือไม่?": {
+    "th": "ต้องการลบประวัติการวิเคราะห์รายการนี้หรือไม่?",
+    "en": "Delete this analysis record?"
+  },
+  "ลบไม่สำเร็จ รายการยังอยู่ในประวัติ": {
+    "th": "ลบไม่สำเร็จ รายการยังอยู่ในประวัติ",
+    "en": "We couldn't delete this record. It is still in your history."
+  },
+  "กำลังตรวจสอบการเข้าสู่ระบบ...": {
+    "th": "กำลังตรวจสอบการเข้าสู่ระบบ...",
+    "en": "Checking your session..."
+  },
+  "เลือกเข้าสู่ระบบหรือสมัครสมาชิก": {
+    "th": "เลือกเข้าสู่ระบบหรือสมัครสมาชิก",
+    "en": "Sign in or create an account"
+  },
+  "Sign In (เข้าสู่ระบบ)": {
+    "th": "เข้าสู่ระบบ",
+    "en": "Sign in"
+  },
+  "Register (สมัครสมาชิก)": {
+    "th": "สมัครสมาชิก",
+    "en": "Register"
+  },
+  "เข้าสู่ระบบ Bruise Color Calibrate": {
+    "th": "เข้าสู่ระบบ Bruise Color Calibrate",
+    "en": "Sign in to Bruise Color Calibrate"
+  },
+  "กำลังเข้าสู่ระบบ...": {
+    "th": "กำลังเข้าสู่ระบบ...",
+    "en": "Signing in..."
+  },
+  "สร้างบัญชีผู้ใช้งาน": {
+    "th": "สร้างบัญชีผู้ใช้งาน",
+    "en": "Create your account"
+  },
+  "ชื่อ - นามสกุล (Full Name)": {
+    "th": "ชื่อ-นามสกุล",
+    "en": "Full name"
+  },
+  "เช่น นพ. ธนภัทร รุ่งเรือง": {
+    "th": "เช่น นพ. ธนภัทร รุ่งเรือง",
+    "en": "Enter your full name"
+  },
+  "อีเมล (Gmail เท่านั้น)": {
+    "th": "อีเมล (Gmail เท่านั้น)",
+    "en": "Email (Gmail only)"
+  },
+  "ใช้ที่อยู่อีเมลที่ลงท้ายด้วย @gmail.com เท่านั้น": {
+    "th": "ใช้ที่อยู่อีเมลที่ลงท้ายด้วย @gmail.com เท่านั้น",
+    "en": "Use an email address ending in @gmail.com."
+  },
+  "รหัสผ่าน (Password)": {
+    "th": "รหัสผ่าน",
+    "en": "Password"
+  },
+  "อย่างน้อย 15 ตัวอักษร": {
+    "th": "อย่างน้อย 15 ตัวอักษร",
+    "en": "At least 15 characters"
+  },
+  "ยืนยันรหัสผ่าน": {
+    "th": "ยืนยันรหัสผ่าน",
+    "en": "Confirm password"
+  },
+  "ยืนยันรหัสผ่านอีกครั้ง": {
+    "th": "ยืนยันรหัสผ่านอีกครั้ง",
+    "en": "Enter your password again"
+  },
+  "กำลังสร้างบัญชี...": {
+    "th": "กำลังสร้างบัญชี...",
+    "en": "Creating your account..."
+  },
+  "ข้ามไปเนื้อหา": {
+    "th": "ข้ามไปเนื้อหา",
+    "en": "Skip to content"
+  },
+  "เปิดเมนูหลัก": {
+    "th": "เปิดเมนูหลัก",
+    "en": "Open navigation"
+  },
+  "เปิดโปรไฟล์": {
+    "th": "เปิดโปรไฟล์",
+    "en": "Open profile"
+  },
+  "ออกจากระบบ": {
+    "th": "ออกจากระบบ",
+    "en": "Sign out"
+  },
+  "ภาพรวมการวิเคราะห์และการปรับเทียบสีรอยฟกช้ำ": {
+    "th": "ภาพรวมการวิเคราะห์และการปรับเทียบสีรอยฟกช้ำ",
+    "en": "Your bruise analyses and colour calibration results"
+  },
+  "กำลังโหลดประวัติ...": {
+    "th": "กำลังโหลดประวัติ...",
+    "en": "Loading history..."
+  },
+  "ยังไม่มีรายการวิเคราะห์ เริ่มจากเลือกภาพแรกของคุณ": {
+    "th": "ยังไม่มีรายการวิเคราะห์ เริ่มจากเลือกภาพแรกของคุณ",
+    "en": "No analyses yet. Upload your first image to get started."
+  },
+  "เริ่มวิเคราะห์ภาพ": {
+    "th": "เริ่มวิเคราะห์ภาพ",
+    "en": "Analyse an image"
+  },
+  "คลิกเพื่อดูผลการตรวจละเอียด": {
+    "th": "คลิกเพื่อดูผลการตรวจละเอียด",
+    "en": "View the full analysis"
+  },
+  "ดูผลวิเคราะห์ ": {
+    "th": "ดูผลวิเคราะห์ ",
+    "en": "View analysis "
+  },
+  "การ์ดสเกลสีอ้างอิงในสภาพแสงเดียวกันจะช่วยปรับแก้ความคลาดสี (CCM) ทำให้การวัดค่าสีมีความน่าเชื่อถือและทำซ้ำได้": {
+    "th": "การ์ดสเกลสีอ้างอิงในสภาพแสงเดียวกันจะช่วยปรับแก้ความคลาดสี (CCM) ทำให้การวัดค่าสีมีความน่าเชื่อถือและทำซ้ำได้",
+    "en": "Include the reference card in the same lighting as the skin so the system can correct colour differences and make measurements more consistent."
+  },
+  "อัปโหลดภาพ ตรวจจับการ์ด ปรับเทียบสี และวิเคราะห์รอยฟกช้ำ": {
+    "th": "อัปโหลดภาพ ตรวจจับการ์ด ปรับเทียบสี และวิเคราะห์รอยฟกช้ำ",
+    "en": "Upload a photo with a reference card to calibrate colours and analyse the bruise."
+  },
+  "วางไฟล์ภาพรอยฟกช้ำที่มีการ์ดสเกลสีอ้างอิง (Color Reference Card) เพื่อเริ่มการปรับเทียบสีอัตโนมัติ": {
+    "th": "เลือกภาพรอยฟกช้ำที่มีการ์ดสเกลอ้างอิง เพื่อเริ่มปรับเทียบสีอัตโนมัติ",
+    "en": "Upload a bruise photo that includes the colour reference card to start calibration."
+  },
+  "MB • โหลดภาพเรียบร้อย": {
+    "th": "MB • โหลดภาพเรียบร้อย",
+    "en": "MB | Image loaded"
+  },
+  "เลือกภาพอื่นแทนภาพนี้": {
+    "th": "เลือกภาพอื่นแทนภาพนี้",
+    "en": "Choose a different image"
+  },
+  "เปลี่ยนภาพ": {
+    "th": "เปลี่ยนภาพ",
+    "en": "Change image"
+  },
+  "ลบภาพนี้ออกเพื่ออัปโหลดใหม่": {
+    "th": "ลบภาพนี้ออกเพื่ออัปโหลดใหม่",
+    "en": "Remove this image and upload another"
+  },
+  "ลบภาพออก": {
+    "th": "ลบภาพออก",
+    "en": "Remove image"
+  },
+  "กำลังโหลดภาพตัวอย่าง...": {
+    "th": "กำลังโหลดภาพตัวอย่าง...",
+    "en": "Loading preview..."
+  },
+  "ยังไม่มีภาพตัวอย่าง": {
+    "th": "ยังไม่มีภาพตัวอย่าง",
+    "en": "No preview available"
+  },
+  "ตรวจค่าสี RGB ในภาพ": {
+    "th": "ตรวจค่าสี RGB ในภาพ",
+    "en": "Inspect image RGB values"
+  },
+  "คลิกภาพหรือใช้ Tab โฟกัสภาพ แล้วกด Enter เพื่อตรวจค่า RGB ใช้ปุ่มลูกศรเลื่อนทีละพิกเซล หรือ Shift + ลูกศรเลื่อนทีละ 10 พิกเซล": {
+    "th": "คลิกภาพหรือใช้ Tab โฟกัสภาพ แล้วกด Enter เพื่อตรวจค่า RGB ใช้ปุ่มลูกศรเลื่อนทีละพิกเซล หรือ Shift + ลูกศรเลื่อนทีละ 10 พิกเซล",
+    "en": "Click the image or focus it with Tab and press Enter to inspect RGB values. Use the arrow keys to move one pixel, or Shift + arrow to move ten pixels."
+  },
+  "Arm (แขน)": {
+    "th": "แขน",
+    "en": "Arm"
+  },
+  "Leg (ขา)": {
+    "th": "ขา",
+    "en": "Leg"
+  },
+  "Torso (ลำตัว/หน้าอก)": {
+    "th": "ลำตัว / หน้าอก",
+    "en": "Torso"
+  },
+  "Face (ใบหน้า)": {
+    "th": "ใบหน้า",
+    "en": "Face"
+  },
+  "Other (อื่นๆ)": {
+    "th": "อื่น ๆ",
+    "en": "Other"
+  },
+  "กำลังวิเคราะห์ภาพ กรุณารอ คุณไม่ต้องอัปโหลดภาพซ้ำ": {
+    "th": "กำลังวิเคราะห์ภาพ กรุณารอ คุณไม่ต้องอัปโหลดภาพซ้ำ",
+    "en": "Analysing your image. You don't need to upload it again."
+  },
+  "ลองวิเคราะห์อีกครั้ง": {
+    "th": "ลองวิเคราะห์อีกครั้ง",
+    "en": "Try again"
+  },
+  "Dominant Colors (เทียบกับสเกล CIEDE2000)": {
+    "th": "สีเด่น (เทียบสเกล CIEDE2000)",
+    "en": "Dominant colours (CIEDE2000 reference matching)"
+  },
+  "ผลลัพธ์นี้ไม่มีภาพ Overlay ให้แสดง": {
+    "th": "ผลลัพธ์นี้ไม่มีภาพ Overlay ให้แสดง",
+    "en": "No overlay is available for this result."
+  },
+  "ประวัติการวิเคราะห์ส่วนบุคคล (บันทึกแยกเฉพาะบัญชี:": {
+    "th": "ประวัติการวิเคราะห์ส่วนบุคคล (บันทึกแยกเฉพาะบัญชี:",
+    "en": "Your analysis history (saved to this account:"
+  },
+  "ซิงค์ดึงประวัติล่าสุดของบัญชีคุณจาก MySQL (ระบบรีเฟรชอัตโนมัติทุก 20 วินาที)": {
+    "th": "ซิงค์ดึงประวัติล่าสุดของบัญชีคุณจาก MySQL (ระบบรีเฟรชอัตโนมัติทุก 20 วินาที)",
+    "en": "Load the latest history for your account. Refreshes automatically every 20 seconds."
+  },
+  "ซิงค์ข้อมูลบัญชีนี้": {
+    "th": "รีเฟรชประวัติ",
+    "en": "Refresh history"
+  },
+  "ค้นหาประวัติ": {
+    "th": "ค้นหาประวัติ",
+    "en": "Search history"
+  },
+  "กรองช่วงวันตามสี": {
+    "th": "กรองช่วงวันตามสี",
+    "en": "Filter by age range"
+  },
+  "0–2 วัน": {
+    "th": "0–2 วัน",
+    "en": "0-2 days"
+  },
+  "2–5 วัน": {
+    "th": "2–5 วัน",
+    "en": "2-5 days"
+  },
+  "5–7 วัน": {
+    "th": "5–7 วัน",
+    "en": "5-7 days"
+  },
+  "7–10 วัน": {
+    "th": "7–10 วัน",
+    "en": "7-10 days"
+  },
+  "10–14 วัน": {
+    "th": "10–14 วัน",
+    "en": "10-14 days"
+  },
+  "ประวัติการวิเคราะห์": {
+    "th": "ประวัติการวิเคราะห์",
+    "en": "Analysis history"
+  },
+  "ไม่พบรายการที่ตรงกับตัวกรอง": {
+    "th": "ไม่พบรายการที่ตรงกับตัวกรอง",
+    "en": "No records match your filters."
+  },
+  "ยังไม่มีประวัติการวิเคราะห์": {
+    "th": "ยังไม่มีประวัติการวิเคราะห์",
+    "en": "No analysis history yet."
+  },
+  "ล้างตัวกรอง": {
+    "th": "ล้างตัวกรอง",
+    "en": "Clear filters"
+  },
+  "ดูภาพและรายงาน ": {
+    "th": "ดูภาพและรายงาน ",
+    "en": "View image and report "
+  },
+  "ภาพตัวอย่าง ": {
+    "th": "ภาพตัวอย่าง ",
+    "en": "Preview "
+  },
+  "คลิกเพื่อเปิดรายงานเคส": {
+    "th": "คลิกเพื่อเปิดรายงานเคส",
+    "en": "Open case report"
+  },
+  "ข้อมูลบัญชีผู้ใช้งานทางคลินิก (Clinical Research Account)": {
+    "th": "ข้อมูลบัญชีสำหรับงานวิจัยทางคลินิก",
+    "en": "Your research account"
+  },
+  "Full name (ชื่อ-นามสกุล)": {
+    "th": "ชื่อ-นามสกุล",
+    "en": "Full name"
+  },
+  "ชื่อ-นามสกุลของคุณ": {
+    "th": "ชื่อ-นามสกุลของคุณ",
+    "en": "Your full name"
+  },
+  "อีเมลนี้ใช้เป็นรหัสระบุตัวตนและแยกข้อมูลเคสคนไข้ใน MySQL ไม่สามารถแก้ไขได้": {
+    "th": "อีเมลนี้ใช้ระบุบัญชีและแยกข้อมูลเคส จึงเปลี่ยนที่นี่ไม่ได้",
+    "en": "This email identifies your account and keeps your case records separate. It cannot be changed here."
+  },
+  "Save Changes (บันทึกชื่อผู้ใช้)": {
+    "th": "บันทึกชื่อ",
+    "en": "Save name"
+  },
+  "บันทึกเมื่อ:": {
+    "th": "บันทึกเมื่อ:",
+    "en": "Saved:"
+  },
+  "• ตำแหน่งร่างกาย:": {
+    "th": "• ตำแหน่งร่างกาย:",
+    "en": "| Body site:"
+  },
+  "• ไฟล์:": {
+    "th": "• ไฟล์:",
+    "en": "| File:"
+  },
+  "ปิดรายงาน": {
+    "th": "ปิดรายงาน",
+    "en": "Close report"
+  },
+  "รายการนี้บันทึกจากโหมดตัวอย่างในเบราว์เซอร์ ค่าขนาดและช่วงวันไม่ใช่ผลวิเคราะห์จาก backend กรุณาวิเคราะห์ภาพต้นฉบับใหม่": {
+    "th": "รายการนี้บันทึกจากโหมดตัวอย่างในเบราว์เซอร์ ค่าขนาดและช่วงวันไม่ใช่ผลวิเคราะห์จาก backend กรุณาวิเคราะห์ภาพต้นฉบับใหม่",
+    "en": "This record came from the browser demo. Its size and age values are not server analysis results. Analyse the original image again."
+  },
+  "1. ภาพถ่ายต้นฉบับ (Original)": {
+    "th": "1. ภาพถ่ายต้นฉบับ",
+    "en": "1. Original photo"
+  },
+  "ไม่มีภาพ Calibrate แยกต่างหาก": {
+    "th": "ไม่มีภาพหลังปรับเทียบสีแยกต่างหาก",
+    "en": "No separate calibrated image is available."
+  },
+  "2. ภาพปรับเทียบสีแล้ว (CCM Calibrated)": {
+    "th": "2. ภาพหลังปรับเทียบสี (CCM)",
+    "en": "2. Colour-calibrated image (CCM)"
+  },
+  "ไม่มีภาพ Overlay": {
+    "th": "ไม่มีภาพ Overlay",
+    "en": "No overlay is available."
+  },
+  "3. รอยแผลที่ตีกรอบ Mask (Overlay)": {
+    "th": "3. ภาพขอบเขตรอยฟกช้ำ",
+    "en": "3. Bruise mask overlay"
+  },
+  "Wound Area (ขนาดแผล)": {
+    "th": "พื้นที่รอยฟกช้ำ",
+    "en": "Wound area"
+  },
+  "Dominant Color Profile (กลุ่มสีเด่น)": {
+    "th": "กลุ่มสีเด่น",
+    "en": "Dominant colour profile"
+  },
+  "เหตุผลประกอบการประเมิน": {
+    "th": "เหตุผลประกอบการประเมิน",
+    "en": "Assessment notes"
+  },
+  "รายละเอียดการปรับเทียบสี": {
+    "th": "รายละเอียดการปรับเทียบสี",
+    "en": "Calibration details"
+  },
+  "คำเตือนทางการแพทย์และนิติเวช (Clinical & Forensic Disclaimer):": {
+    "th": "คำเตือนทางการแพทย์และนิติเวช:",
+    "en": "Medical and forensic notice:"
+  },
+  "ระบบยังไม่สามารถระบุอายุรอยฟกช้ำได้ ผลสีและขนาดเป็นข้อมูลต้นแบบที่ต้องตรวจสอบร่วมกับภาพต้นฉบับ": {
+    "th": "ระบบยังไม่สามารถระบุอายุรอยฟกช้ำได้ ผลสีและขนาดเป็นข้อมูลต้นแบบที่ต้องตรวจสอบร่วมกับภาพต้นฉบับ",
+    "en": "This system cannot estimate bruise age. Colour and size results are prototype outputs that must be checked against the original image."
+  },
+  "Close (ปิด)": {
+    "th": "ปิด",
+    "en": "Close"
+  },
+  "ปรับเทียบสีภาพ": {
+    "th": "ปรับเทียบสีภาพ",
+    "en": "Calibrate photo colours"
+  },
+  "ก่อนอ่านผลรอยฟกช้ำ": {
+    "th": "ก่อนอ่านผลรอยฟกช้ำ",
+    "en": "before reviewing the bruise"
+  },
+  "พื้นที่ทำงานสำหรับภาพรอยฟกช้ำที่มีสเกลอ้างอิง เปรียบเทียบสีก่อนและหลังปรับเทียบ ตรวจผล และเก็บประวัติไว้ในบัญชีของคุณ": {
+    "th": "อัปโหลดภาพรอยฟกช้ำที่มีสเกลอ้างอิง เปรียบเทียบสีก่อนและหลังปรับเทียบ ตรวจผล แล้วบันทึกไว้ในบัญชีของคุณ",
+    "en": "Upload a bruise photo with a reference card. Compare the colours before and after calibration, review the results, and save the analysis to your account."
+  },
+  "เข้าสู่ระบบเพื่อเริ่มใช้งาน": {
+    "th": "เข้าสู่ระบบเพื่อเริ่มใช้งาน",
+    "en": "Sign in to get started"
+  },
+  "ดูประวัติการวิเคราะห์": {
+    "th": "ดูประวัติการวิเคราะห์",
+    "en": "View analysis history"
+  },
+  "สร้างบัญชี": {
+    "th": "สร้างบัญชี",
+    "en": "Create an account"
+  },
+  "ต้นแบบสำหรับงานวิจัย ยังไม่สามารถระบุอายุรอยฟกช้ำได้": {
+    "th": "ต้นแบบสำหรับงานวิจัย ยังไม่สามารถระบุอายุรอยฟกช้ำได้",
+    "en": "Research prototype. Bruise age estimation is not available."
+  },
+  "กำลังโหลดภาพประกอบ...": {
+    "th": "กำลังโหลดภาพประกอบ...",
+    "en": "Loading illustration..."
+  },
+  "สิ่งที่ดูได้จากภาพหนึ่งใบ": {
+    "th": "สิ่งที่ดูได้จากภาพหนึ่งใบ",
+    "en": "What you can review"
+  },
+  "สีที่ตรวจพบ": {
+    "th": "สีที่ตรวจพบ",
+    "en": "Detected colours"
+  },
+  "แยกสีผิวและสีรอยแผล พร้อมค่า RGB, HEX และ ΔE00 เทียบสเกล": {
+    "th": "แยกสีผิวและสีรอยแผล พร้อมค่า RGB, HEX และ ΔE00 เทียบสเกล",
+    "en": "View skin and bruise colours, with RGB, HEX and ΔE00 values against the reference card."
+  },
+  "ขนาดโดยประมาณ": {
+    "th": "ขนาดโดยประมาณ",
+    "en": "Approximate size"
+  },
+  "แสดงความกว้าง ความยาว และพื้นที่ โดยภาพแผลและการ์ดต้องอยู่ระนาบใกล้กัน": {
+    "th": "แสดงความกว้าง ความยาว และพื้นที่ โดยภาพแผลและการ์ดต้องอยู่ระนาบใกล้กัน",
+    "en": "Review width, length and area. The bruise and reference card need to be on nearly the same plane."
+  },
+  "ประวัติส่วนตัว": {
+    "th": "ประวัติส่วนตัว",
+    "en": "Your history"
+  },
+  "บันทึกผลตาม Case ID ค้นหารายการเดิม และเปิดรายงานของบัญชีคุณ": {
+    "th": "บันทึกผลตาม Case ID ค้นหารายการเดิม และเปิดรายงานของบัญชีคุณ",
+    "en": "Save results by case ID, find previous analyses, and open your reports."
+  },
+  "Research prototype · ตรวจภาพ Overlay และผลวิเคราะห์ก่อนนำไปใช้": {
+    "th": "ต้นแบบสำหรับงานวิจัย โปรดตรวจภาพขอบเขตที่ตรวจพบและผลวิเคราะห์ก่อนใช้งาน",
+    "en": "Research prototype. Check the overlay and analysis before use."
+  },
+  "ปิดเมนู": {
+    "th": "ปิดเมนู",
+    "en": "Close navigation"
+  },
+  "เมนูหลัก": {
+    "th": "เมนูหลัก",
+    "en": "Main navigation"
+  },
+  "เข้าสู่ระบบเพื่อวิเคราะห์ภาพและดูประวัติส่วนตัว": {
+    "th": "เข้าสู่ระบบเพื่อวิเคราะห์ภาพและดูประวัติส่วนตัว",
+    "en": "Sign in to analyse images and view your history."
+  },
+  "สีจริงหลังปรับสี": {
+    "th": "สีจริงหลังปรับสี",
+    "en": "Colours after calibration"
+  },
+  "ดูตารางสีทั้งหมด": {
+    "th": "ดูตารางสีทั้งหมด",
+    "en": "View all colour details"
+  },
+  "รายละเอียดกลุ่มสี": {
+    "th": "รายละเอียดกลุ่มสี",
+    "en": "Colour cluster details"
+  },
+  "ชื่อสีที่พบ": {
+    "th": "ชื่อสีที่พบ",
+    "en": "Detected colour"
+  },
+  "RGB ที่พบ": {
+    "th": "RGB ที่พบ",
+    "en": "Detected RGB"
+  },
+  "เปอร์เซ็นต์": {
+    "th": "เปอร์เซ็นต์",
+    "en": "Percentage"
+  },
+  "ผลเทียบสเกล": {
+    "th": "ผลเทียบสเกล",
+    "en": "Reference match"
+  },
+  "ΔE00 ถึงสเกล": {
+    "th": "ΔE00 ถึงสเกล",
+    "en": "ΔE00 to reference"
+  },
+  "ΔE00 แสดงความใกล้เคียงกับช่องสีอ้างอิง ไม่ใช่ค่าความผิดพลาดของสีจริง": {
+    "th": "ΔE00 แสดงความใกล้เคียงกับช่องสีอ้างอิง ไม่ใช่ค่าความผิดพลาดของสีจริง",
+    "en": "ΔE00 measures similarity to a reference patch. It does not measure error against the true colour."
+  },
+  "ค่า RGB (0–255)": {
+    "th": "ค่า RGB (0–255)",
+    "en": "RGB value (0-255)"
+  },
+  "จำนวนพิกเซล": {
+    "th": "จำนวนพิกเซล",
+    "en": "Pixel count"
+  },
+  "ไม่มีข้อมูลพิกเซล": {
+    "th": "ไม่มีข้อมูลพิกเซล",
+    "en": "No pixel data"
+  },
+  "3. สีเนื้อที่ตรวจพบ": {
+    "th": "3. สีเนื้อที่ตรวจพบ",
+    "en": "3. Detected skin colours"
+  },
+  "ไม่มีข้อมูลกลุ่มสีเนื้อ กรุณาวิเคราะห์ภาพใหม่เพื่อดูรายละเอียด": {
+    "th": "ไม่มีข้อมูลกลุ่มสีเนื้อ กรุณาวิเคราะห์ภาพใหม่เพื่อดูรายละเอียด",
+    "en": "No skin colour details are available. Analyse the original image again."
+  },
+  "4. สีแผลที่ตรวจพบ": {
+    "th": "4. สีแผลที่ตรวจพบ",
+    "en": "4. Detected bruise colours"
+  },
+  "ไม่มีข้อมูลกลุ่มสีแผล กรุณาวิเคราะห์ภาพใหม่เพื่อดูรายละเอียด": {
+    "th": "ไม่มีข้อมูลกลุ่มสีแผล กรุณาวิเคราะห์ภาพใหม่เพื่อดูรายละเอียด",
+    "en": "No bruise colour details are available. Analyse the original image again."
+  },
+  "ไม่พบรอยสีแผลที่เพียงพอสำหรับวิเคราะห์": {
+    "th": "ไม่พบรอยสีแผลที่เพียงพอสำหรับวิเคราะห์",
+    "en": "Not enough bruise-coloured pixels were detected for analysis."
+  },
+  "5. ขนาดแผลโดยประมาณ": {
+    "th": "5. ขนาดแผลโดยประมาณ",
+    "en": "5. Approximate wound size"
+  },
+  "กว้าง": {
+    "th": "กว้าง",
+    "en": "Width"
+  },
+  "ยาว": {
+    "th": "ยาว",
+    "en": "Length"
+  },
+  "พื้นที่รอยสี": {
+    "th": "พื้นที่รอยสี",
+    "en": "Coloured area"
+  },
+  "ค่าประมาณ: แผลและการ์ดต้องอยู่ระนาบใกล้กัน และต้องตรวจสอบ mask ด้วยสายตา": {
+    "th": "ค่าประมาณ: แผลและการ์ดต้องอยู่ระนาบใกล้กัน และต้องตรวจสอบ mask ด้วยสายตา",
+    "en": "Approximate measurements. Keep the bruise and card on nearly the same plane and check the mask visually."
+  },
+  "ยังไม่มีข้อมูลสำหรับวัดขนาดแผล": {
+    "th": "ยังไม่มีข้อมูลสำหรับวัดขนาดแผล",
+    "en": "No wound measurements are available."
+  },
+  "RGB ก่อน–หลังปรับสี · 32 bins": {
+    "th": "RGB ก่อน–หลังปรับสี · 32 bins",
+    "en": "RGB before and after calibration (32 bins)"
+  },
+  "ก่อนปรับสี": {
+    "th": "ก่อนปรับสี",
+    "en": "Before calibration"
+  },
+  "หลังปรับสี": {
+    "th": "หลังปรับสี",
+    "en": "After calibration"
+  },
+  "สีเนื้อ": {
+    "th": "สีเนื้อ",
+    "en": "Skin"
+  },
+  "สีแผล": {
+    "th": "สีแผล",
+    "en": "Bruise"
+  },
+  "ชี้ แตะ หรือกด Enter เพื่อจำลองกล้องถ่ายภาพมือคว่ำ": {
+    "th": "ชี้ แตะ หรือกด Enter เพื่อจำลองกล้องถ่ายภาพมือคว่ำ",
+    "en": "Hover, tap or press Enter to simulate photographing the hand"
+  },
+  "โหลดภาพประกอบไม่สำเร็จ กรุณารีเฟรชหน้าเว็บ": {
+    "th": "โหลดภาพประกอบไม่สำเร็จ กรุณารีเฟรชหน้าเว็บ",
+    "en": "The illustration couldn't load. Please refresh the page."
+  },
+  "ภาพ clay จำลองมือคว่ำที่มีรอยฟกช้ำและกล้องถ่ายภาพบนพื้นหลังเบลอ ไม่ใช่ผลวิเคราะห์จริง": {
+    "th": "ภาพ clay จำลองมือคว่ำที่มีรอยฟกช้ำและกล้องถ่ายภาพบนพื้นหลังเบลอ ไม่ใช่ผลวิเคราะห์จริง",
+    "en": "Clay illustration of a bruised hand and camera on a blurred background. This is a demonstration, not an analysis result."
+  },
+  "ถ่ายภาพจำลองแล้ว": {
+    "th": "ถ่ายภาพจำลองแล้ว",
+    "en": "Simulated photo captured"
+  },
+  "กำลังถ่ายภาพจำลอง": {
+    "th": "กำลังถ่ายภาพจำลอง",
+    "en": "Taking a simulated photo"
+  },
+  "พร้อมจำลองการถ่ายภาพ": {
+    "th": "พร้อมจำลองการถ่ายภาพ",
+    "en": "Ready to simulate a photo"
+  },
+  "รหัสผ่านยืนยัน": {
+    "th": "รหัสผ่านยืนยัน",
+    "en": "confirmation password"
+  },
+  "รหัสผ่าน": {
+    "th": "รหัสผ่าน",
+    "en": "password"
+  },
+  "ซ่อน": {
+    "th": "ซ่อน",
+    "en": "Hide "
+  },
+  "แสดง": {
+    "th": "แสดง",
+    "en": "Show "
+  },
+  "ไฟล์ภาพว่าง กรุณาเลือกภาพอื่น": {
+    "th": "ไฟล์ภาพว่าง กรุณาเลือกภาพอื่น",
+    "en": "This image file is empty. Choose another file."
+  },
+  "ไฟล์ภาพเกิน 25 MB กรุณาลดขนาดภาพแล้วเลือกใหม่": {
+    "th": "ไฟล์ภาพเกิน 25 MB กรุณาลดขนาดภาพแล้วเลือกใหม่",
+    "en": "The image is larger than 25 MB. Resize it or choose another file."
+  },
+  "รูปแบบไฟล์ไม่รองรับ กรุณาเลือก JPG, PNG, WebP, BMP, TIFF, GIF, AVIF หรือ HEIC/HEIF": {
+    "th": "รูปแบบไฟล์ไม่รองรับ กรุณาเลือก JPG, PNG, WebP, BMP, TIFF, GIF, AVIF หรือ HEIC/HEIF",
+    "en": "Choose a JPG, PNG, WebP, BMP, TIFF, GIF, AVIF, HEIC or HEIF image."
+  },
+  "ยังไม่สามารถระบุได้": {
+    "th": "ยังไม่สามารถระบุได้",
+    "en": "Not yet available"
+  },
+  "ข้อมูลผลวิเคราะห์จากเซิร์ฟเวอร์ไม่ครบ กรุณาลองอีกครั้ง": {
+    "th": "ข้อมูลผลวิเคราะห์จากเซิร์ฟเวอร์ไม่ครบ กรุณาลองอีกครั้ง",
+    "en": "The server returned an incomplete analysis. Please try again."
+  },
+  "บันทึก MySQL ไม่สำเร็จ รายการยังรอซิงก์": {
+    "th": "บันทึก MySQL ไม่สำเร็จ รายการยังรอซิงก์",
+    "en": "This record hasn't been saved to the server. It is waiting to sync."
+  },
+  "เซิร์ฟเวอร์ยังไม่ยืนยันการบันทึก": {
+    "th": "เซิร์ฟเวอร์ยังไม่ยืนยันการบันทึก",
+    "en": "The server hasn't confirmed that this record was saved."
+  },
+  "เซิร์ฟเวอร์ยังไม่ยืนยันการลบ": {
+    "th": "เซิร์ฟเวอร์ยังไม่ยืนยันการลบ",
+    "en": "The server hasn't confirmed that this record was deleted."
+  },
+  "Home": {
+    "th": "หน้าแรก",
+    "en": "Home"
+  },
+  "Sign in": {
+    "th": "เข้าสู่ระบบ",
+    "en": "Sign in"
+  },
+  "Email": {
+    "th": "อีเมล",
+    "en": "Email"
+  },
+  "Password": {
+    "th": "รหัสผ่าน",
+    "en": "Password"
+  },
+  "Create Account": {
+    "th": "สร้างบัญชี",
+    "en": "Create account"
+  },
+  "Bruise Color Calibrate Password Policy": {
+    "th": "นโยบายรหัสผ่าน Bruise Color Calibrate",
+    "en": "Bruise Color Calibrate Password Policy"
+  },
+  "Use": {
+    "th": "ใช้",
+    "en": "Use"
+  },
+  "15-128 characters": {
+    "th": "15-128 ตัวอักษร",
+    "en": "15-128 characters"
+  },
+  "Use only English letters (A-Z, a-z), numbers, symbols, and spaces.": {
+    "th": "ใช้เฉพาะตัวอักษรอังกฤษ (A-Z, a-z) ตัวเลข สัญลักษณ์ และช่องว่าง",
+    "en": "Use only English letters (A-Z, a-z), numbers, symbols, and spaces."
+  },
+  "Uppercase letters, numbers, and symbols are not mandatory.": {
+    "th": "ไม่บังคับว่าต้องมีตัวพิมพ์ใหญ่ ตัวเลข หรือสัญลักษณ์",
+    "en": "Uppercase letters, numbers, and symbols are not mandatory."
+  },
+  "Confirm your password exactly and use a unique password for this system.": {
+    "th": "กรอกยืนยันรหัสผ่านให้ตรงกัน และใช้รหัสเฉพาะสำหรับระบบนี้",
+    "en": "Confirm your password exactly and use a unique password for this system."
+  },
+  "Passwords found in known data breaches are not accepted.": {
+    "th": "ไม่รับรหัสผ่านที่พบในรายการรหัสผ่านรั่วไหล",
+    "en": "Passwords found in known data breaches are not accepted."
+  },
+  "Logout": {
+    "th": "ออกจากระบบ",
+    "en": "Logout"
+  },
+  "Sign In": {
+    "th": "เข้าสู่ระบบ",
+    "en": "Sign In"
+  },
+  "Register": {
+    "th": "สมัครสมาชิก",
+    "en": "Register"
+  },
+  "Dashboard": {
+    "th": "ภาพรวม",
+    "en": "Dashboard"
+  },
+  "Total analyses": {
+    "th": "การวิเคราะห์ทั้งหมด",
+    "en": "Total analyses"
+  },
+  "Records in your account": {
+    "th": "รายการในบัญชีของคุณ",
+    "en": "Records in your account"
+  },
+  "Calibrated images": {
+    "th": "ภาพที่ปรับเทียบสีแล้ว",
+    "en": "Calibrated images"
+  },
+  "with reference scale": {
+    "th": "ปรับเทียบด้วยสเกลอ้างอิง",
+    "en": "with reference scale"
+  },
+  "This month": {
+    "th": "เดือนนี้",
+    "en": "This month"
+  },
+  "new analyses logged": {
+    "th": "รายการวิเคราะห์ใหม่",
+    "en": "new analyses logged"
+  },
+  "Last assessment": {
+    "th": "ผลประเมินล่าสุด",
+    "en": "Last assessment"
+  },
+  "estimated day band": {
+    "th": "ช่วงอายุรอยฟกช้ำ",
+    "en": "estimated day band"
+  },
+  "Recent analyses": {
+    "th": "การวิเคราะห์ล่าสุด",
+    "en": "Recent analyses"
+  },
+  "View all": {
+    "th": "ดูทั้งหมด",
+    "en": "View all"
+  },
+  "Inspect": {
+    "th": "ดูผล",
+    "en": "Inspect"
+  },
+  "Clinical Workflow": {
+    "th": "ขั้นตอนการวิเคราะห์",
+    "en": "Clinical Workflow"
+  },
+  "Ready": {
+    "th": "พร้อมใช้งาน",
+    "en": "Ready"
+  },
+  "1. Upload photo → 2. Auto detect card → 3. Calibrate → 4. Segment bruise → 5. Measure & Review": {
+    "th": "1. อัปโหลดภาพ → 2. ตรวจจับการ์ด → 3. ปรับเทียบสี → 4. แยกรอยฟกช้ำ → 5. วัดขนาดและตรวจผล",
+    "en": "1. Upload photo → 2. Auto detect card → 3. Calibrate → 4. Segment bruise → 5. Measure & Review"
+  },
+  "Start new analysis": {
+    "th": "เริ่มวิเคราะห์ภาพ",
+    "en": "Start new analysis"
+  },
+  "New Analysis": {
+    "th": "วิเคราะห์ภาพใหม่",
+    "en": "New Analysis"
+  },
+  "1. Image acquisition": {
+    "th": "1. เลือกภาพ",
+    "en": "1. Image acquisition"
+  },
+  "Drop clinical photo here or click to browse": {
+    "th": "วางภาพที่นี่ หรือคลิกเพื่อเลือกไฟล์",
+    "en": "Drop clinical photo here or click to browse"
+  },
+  "Max 25MB": {
+    "th": "ไม่เกิน 25 MB",
+    "en": "Max 25MB"
+  },
+  "Select Image File": {
+    "th": "เลือกไฟล์ภาพ",
+    "en": "Select Image File"
+  },
+  "Reference pixel:": {
+    "th": "พิกเซลที่เลือก:",
+    "en": "Reference pixel:"
+  },
+  "2. Case parameters & notes": {
+    "th": "2. ข้อมูลเคสและบันทึก",
+    "en": "2. Case parameters & notes"
+  },
+  "Case / Subject ID": {
+    "th": "รหัสเคส / ผู้เข้าร่วม",
+    "en": "Case / Subject ID"
+  },
+  "Body site": {
+    "th": "ตำแหน่งร่างกาย",
+    "en": "Body site"
+  },
+  "Select body site": {
+    "th": "เลือกตำแหน่งร่างกาย",
+    "en": "Select body site"
+  },
+  "Notes": {
+    "th": "บันทึกเพิ่มเติม",
+    "en": "Notes"
+  },
+  "Optional clinical / lighting notes": {
+    "th": "บันทึกเกี่ยวกับรอยฟกช้ำหรือแสงขณะถ่ายภาพ (ไม่บังคับ)",
+    "en": "Optional clinical / lighting notes"
+  },
+  "Color Profile": {
+    "th": "ข้อมูลสี",
+    "en": "Color Profile"
+  },
+  "Analysis complete": {
+    "th": "วิเคราะห์เสร็จแล้ว",
+    "en": "Analysis complete"
+  },
+  "Mean RGB": {
+    "th": "ค่า RGB เฉลี่ย",
+    "en": "Mean RGB"
+  },
+  "Mean Lightness": {
+    "th": "ค่าความสว่างเฉลี่ย",
+    "en": "Mean Lightness"
+  },
+  "% sampled": {
+    "th": "% ของพิกเซลตัวอย่าง",
+    "en": "% sampled"
+  },
+  "Estimated Age Range": {
+    "th": "ช่วงอายุรอยฟกช้ำโดยประมาณ",
+    "en": "Estimated Age Range"
+  },
+  "Visual Composite & Mask Overlay": {
+    "th": "ภาพแสดงขอบเขตที่ตรวจพบ",
+    "en": "Visual Composite & Mask Overlay"
+  },
+  "Green: Skin | Red: Bruise Mask": {
+    "th": "สีเขียว: ผิวหนัง | สีแดง: รอยฟกช้ำ",
+    "en": "Green: Skin | Red: Bruise Mask"
+  },
+  "Clear": {
+    "th": "ล้างข้อมูล",
+    "en": "Clear"
+  },
+  "Analysis History": {
+    "th": "ประวัติการวิเคราะห์",
+    "en": "Analysis History"
+  },
+  "(Auto 20s)": {
+    "th": "(ทุก 20 วินาที)",
+    "en": "(Auto 20s)"
+  },
+  "Search case ID, file name, body site, notes...": {
+    "th": "ค้นหารหัสเคส ชื่อไฟล์ ตำแหน่งร่างกาย หรือบันทึก...",
+    "en": "Search case ID, file name, body site, notes..."
+  },
+  "All age ranges": {
+    "th": "ทุกช่วงอายุ",
+    "en": "All age ranges"
+  },
+  "Preview": {
+    "th": "ภาพตัวอย่าง",
+    "en": "Preview"
+  },
+  "Case ID": {
+    "th": "รหัสเคส",
+    "en": "Case ID"
+  },
+  "Date": {
+    "th": "วันที่",
+    "en": "Date"
+  },
+  "Body Site": {
+    "th": "ตำแหน่งร่างกาย",
+    "en": "Body Site"
+  },
+  "Dominant Colors": {
+    "th": "สีเด่น",
+    "en": "Dominant Colors"
+  },
+  "Estimated Age": {
+    "th": "อายุรอยฟกช้ำโดยประมาณ",
+    "en": "Estimated Age"
+  },
+  "Calibration": {
+    "th": "การปรับเทียบสี",
+    "en": "Calibration"
+  },
+  "Save status": {
+    "th": "สถานะการบันทึก",
+    "en": "Save status"
+  },
+  "Action": {
+    "th": "จัดการ",
+    "en": "Action"
+  },
+  "Calibrated": {
+    "th": "ปรับเทียบสีแล้ว",
+    "en": "Calibrated"
+  },
+  "View full clinical case details": {
+    "th": "เปิดรายงานเคสฉบับเต็ม",
+    "en": "View full clinical case details"
+  },
+  "View Detail": {
+    "th": "ดูรายละเอียด",
+    "en": "View Detail"
+  },
+  "Delete record from MySQL": {
+    "th": "ลบรายการนี้จากฐานข้อมูล",
+    "en": "Delete record from MySQL"
+  },
+  "Delete": {
+    "th": "ลบ",
+    "en": "Delete"
+  },
+  "Profile": {
+    "th": "โปรไฟล์",
+    "en": "Profile"
+  },
+  "Forensic & Clinical Researcher": {
+    "th": "ผู้ใช้สำหรับงานวิจัยทางคลินิกและนิติเวช",
+    "en": "Forensic & Clinical Researcher"
+  },
+  "Email Account (LOCK)": {
+    "th": "อีเมลบัญชี (เปลี่ยนไม่ได้)",
+    "en": "Email Account (LOCK)"
+  },
+  "Print clinical assessment report": {
+    "th": "พิมพ์รายงานผลวิเคราะห์",
+    "en": "Print clinical assessment report"
+  },
+  "Print Report": {
+    "th": "พิมพ์รายงาน",
+    "en": "Print Report"
+  },
+  "No preview image": {
+    "th": "ไม่มีภาพตัวอย่าง",
+    "en": "No preview image"
+  },
+  "LOOCV Median ΔE00": {
+    "th": "ค่ามัธยฐาน LOOCV ΔE00",
+    "en": "LOOCV Median ΔE00"
+  },
+  "ColorChecker Calibration Error": {
+    "th": "ค่าความคลาดเคลื่อนในการปรับเทียบสี",
+    "en": "ColorChecker Calibration Error"
+  },
+  "Extracted Clusters": {
+    "th": "กลุ่มสีที่ตรวจพบ",
+    "en": "Extracted Clusters"
+  },
+  "Clinical Reasoning & Notes": {
+    "th": "ผลประเมินและบันทึก",
+    "en": "Assessment and notes"
+  },
+  "Estimated Age:": {
+    "th": "อายุรอยฟกช้ำ:",
+    "en": "Estimated Age:"
+  },
+  "Clinician Notes:": {
+    "th": "บันทึก:",
+    "en": "Clinician Notes:"
+  },
+  "This older record has no saved colour or histogram details. Analyse the original photo again to create a complete record.": {
+    "th": "รายการเดิมไม่มีรายละเอียดสีหรือกราฟที่บันทึกไว้ กรุณาวิเคราะห์ภาพต้นฉบับอีกครั้ง",
+    "en": "This older record has no saved colour or histogram details. Analyse the original photo again to create a complete record."
+  },
+  "ColorChecker Scale Calibration Metrics (ΔE00)": {
+    "th": "ผลการปรับเทียบสเกลสี (ΔE00)",
+    "en": "ColorChecker Scale Calibration Metrics (ΔE00)"
+  },
+  "Leave-One-Out Cross-Validation (LOOCV)": {
+    "th": "ตรวจสอบแบบเว้นตัวอย่างทีละช่อง (LOOCV)",
+    "en": "Leave-One-Out Cross-Validation (LOOCV)"
+  },
+  "Type": {
+    "th": "ประเภท",
+    "en": "Type"
+  },
+  "Patch Name": {
+    "th": "ชื่อช่องสี",
+    "en": "Patch Name"
+  },
+  "RGB Captured": {
+    "th": "RGB ก่อนปรับสี",
+    "en": "RGB Captured"
+  },
+  "RGB Corrected": {
+    "th": "RGB หลังปรับสี",
+    "en": "RGB Corrected"
+  },
+  "RGB Reference": {
+    "th": "RGB อ้างอิง",
+    "en": "RGB Reference"
+  },
+  "ΔE00 Before": {
+    "th": "ΔE00 ก่อนปรับสี",
+    "en": "ΔE00 Before"
+  },
+  "ΔE00 After": {
+    "th": "ΔE00 หลังปรับสี",
+    "en": "ΔE00 After"
+  },
+  "LOOCV ΔE00": {
+    "th": "LOOCV ΔE00",
+    "en": "LOOCV ΔE00"
+  },
+  "Print / Export PDF": {
+    "th": "พิมพ์ / บันทึก PDF",
+    "en": "Print / Export PDF"
+  },
+  "Prototype v0.1": {
+    "th": "ต้นแบบ v0.1",
+    "en": "Prototype v0.1"
+  },
+  "For research and clinical workflow demonstration only.": {
+    "th": "สำหรับงานวิจัยและสาธิตขั้นตอนการทำงานทางคลินิกเท่านั้น",
+    "en": "For research and clinical workflow demonstration only."
+  },
+  "6. Histogram": {
+    "th": "6. กราฟการกระจายค่าสี",
+    "en": "6. Histogram"
+  },
+  "Clinician": {
+    "th": "ผู้ใช้งาน",
+    "en": "Clinician"
+  },
+  "Server did not establish a session": {
+    "th": "เซิร์ฟเวอร์ยังไม่ยืนยันการเข้าสู่ระบบ",
+    "en": "The server couldn't start your session. Please try again."
+  },
+  "Bruise color calibration study": {
+    "th": "งานวิจัยการปรับเทียบสีรอยฟกช้ำ",
+    "en": "Bruise colour calibration study"
+  },
+  "Not specified": {
+    "th": "ไม่ได้ระบุ",
+    "en": "Not specified"
+  },
+  "Unspecified": {
+    "th": "ไม่ได้ระบุ",
+    "en": "Not specified"
+  },
+  "Register Account (MySQL)": {
+    "th": "สร้างบัญชี",
+    "en": "Create account"
+  },
+  "User Profile": {
+    "th": "โปรไฟล์",
+    "en": "Profile"
+  },
+  "MySQL Database is online via Prisma": {
+    "th": "เชื่อมต่อฐานข้อมูลแล้ว",
+    "en": "Connected to the database"
+  },
+  "MySQL Database is unreachable": {
+    "th": "เชื่อมต่อฐานข้อมูลไม่ได้",
+    "en": "The database is unavailable"
+  },
+  "MySQL (Prisma): Connected": {
+    "th": "เชื่อมต่อฐานข้อมูลแล้ว",
+    "en": "Database connected"
+  },
+  "MySQL: Offline": {
+    "th": "ฐานข้อมูลออฟไลน์",
+    "en": "Database offline"
+  },
+  "Image loaded": {
+    "th": "เลือกภาพแล้ว",
+    "en": "Image loaded"
+  },
+  "No image": {
+    "th": "ยังไม่มีภาพ",
+    "en": "No image"
+  },
+  "Pending analysis": {
+    "th": "รอวิเคราะห์",
+    "en": "Ready to analyse"
+  },
+  "Arm": {
+    "th": "แขน",
+    "en": "Arm"
+  },
+  "Leg": {
+    "th": "ขา",
+    "en": "Leg"
+  },
+  "Torso": {
+    "th": "ลำตัว",
+    "en": "Torso"
+  },
+  "Face": {
+    "th": "ใบหน้า",
+    "en": "Face"
+  },
+  "Other": {
+    "th": "อื่น ๆ",
+    "en": "Other"
+  },
+  "Running pipeline analysis...": {
+    "th": "กำลังวิเคราะห์ภาพ...",
+    "en": "Analysing image..."
+  },
+  "Analyze Photo & Bruise": {
+    "th": "วิเคราะห์ภาพรอยฟกช้ำ",
+    "en": "Analyse image"
+  },
+  "Wound and Skin Overlay": {
+    "th": "ภาพขอบเขตผิวหนังและรอยฟกช้ำ",
+    "en": "Skin and bruise overlay"
+  },
+  "Calibrated Preview": {
+    "th": "ภาพหลังปรับเทียบสี",
+    "en": "Calibrated preview"
+  },
+  "Saving to MySQL...": {
+    "th": "กำลังบันทึก...",
+    "en": "Saving..."
+  },
+  "Save to Clinical History (MySQL)": {
+    "th": "บันทึกผลวิเคราะห์",
+    "en": "Save analysis"
+  },
+  "Raw": {
+    "th": "ยังไม่ได้ปรับเทียบสี",
+    "en": "Uncalibrated"
+  },
+  "Unknown": {
+    "th": "ไม่มีข้อมูล",
+    "en": "Unknown"
+  },
+  "Pending sync": {
+    "th": "รอซิงก์",
+    "en": "Waiting to sync"
+  },
+  "Saving...": {
+    "th": "กำลังบันทึก...",
+    "en": "Saving..."
+  },
+  "Save to MySQL": {
+    "th": "บันทึกลงฐานข้อมูล",
+    "en": "Save to server"
+  },
+  "Raw / Uncalibrated": {
+    "th": "ยังไม่ได้ปรับเทียบสี",
+    "en": "Uncalibrated"
+  },
+  "Calibration unavailable": {
+    "th": "ไม่มีข้อมูลการปรับเทียบสี",
+    "en": "Calibration unavailable"
+  },
+  "Original Image": {
+    "th": "ภาพต้นฉบับ",
+    "en": "Original image"
+  },
+  "Thumbnail Preview": {
+    "th": "ภาพตัวอย่าง",
+    "en": "Thumbnail"
+  },
+  "Calibrated Image": {
+    "th": "ภาพหลังปรับเทียบสี",
+    "en": "Calibrated image"
+  },
+  "Overlay & Mask": {
+    "th": "ภาพขอบเขตที่ตรวจพบ",
+    "en": "Overlay and mask"
+  },
+  "Overlay Preview": {
+    "th": "ภาพขอบเขตที่ตรวจพบ",
+    "en": "Overlay preview"
+  },
+  "Approximate area": {
+    "th": "พื้นที่โดยประมาณ",
+    "en": "Approximate area"
+  },
+  "Password must be 15-128 characters long.": {
+    "th": "รหัสผ่านต้องยาว 15-128 ตัวอักษร",
+    "en": "Password must be 15-128 characters long."
+  },
+  "History cache unavailable": {
+    "th": "อ่านประวัติที่เก็บในเครื่องไม่ได้",
+    "en": "Local history is unavailable."
+  },
+  "This password appears in known data breaches. Choose another password.": {
+    "th": "รหัสผ่านนี้อยู่ในรายการที่เคยรั่วไหล กรุณาใช้รหัสอื่น",
+    "en": "This password appears in known data breaches. Choose another password."
+  },
+  "Measured": {
+    "th": "วัดขนาดแล้ว",
+    "en": "Measured"
+  },
+  "ไม่มีสเกล": {
+    "th": "ไม่มีสเกล",
+    "en": "No reference scale"
+  },
+  "ไม่พบแผล": {
+    "th": "ไม่พบรอยสีแผล",
+    "en": "No bruise-coloured region detected"
+  },
+  "ยังวัดไม่ได้: ไม่พบแผล": {
+    "th": "ยังวัดไม่ได้: ไม่พบรอยสีแผล",
+    "en": "No measurements: no bruise-coloured region detected"
+  },
+  "ไม่พบรอยสีแผล": {
+    "th": "ไม่พบรอยสีแผล",
+    "en": "No bruise-coloured region detected"
+  },
+  "ไม่มีพิกัดสเกลที่ใช้ได้": {
+    "th": "ไม่มีพิกัดสเกลที่ใช้ได้",
+    "en": "No usable reference scale coordinates"
+  },
+  "ไม่ผ่าน: ห้ามตีความสีแผลหรือช่วงวัน": {
+    "th": "ปรับเทียบสีไม่ผ่าน ห้ามใช้ตีความสีแผลหรือช่วงวัน",
+    "en": "Calibration failed. Do not interpret bruise colours or age."
+  },
+  "พอใช้สำหรับต้นแบบ": {
+    "th": "พอใช้สำหรับต้นแบบ",
+    "en": "Acceptable for prototype use"
+  },
+  "สีอื่น/ไม่ตรงช่องสเกล": {
+    "th": "สีอื่น / ไม่ตรงช่องสเกล",
+    "en": "Other / no reference match"
+  },
+  "Language": {
+    "th": "ภาษา",
+    "en": "Language"
+  },
+  "Show password": {
+    "th": "แสดงรหัสผ่าน",
+    "en": "Show password"
+  },
+  "Hide password": {
+    "th": "ซ่อนรหัสผ่าน",
+    "en": "Hide password"
+  },
+  "Show confirmation password": {
+    "th": "แสดงรหัสผ่านยืนยัน",
+    "en": "Show confirmation password"
+  },
+  "Hide confirmation password": {
+    "th": "ซ่อนรหัสผ่านยืนยัน",
+    "en": "Hide confirmation password"
+  },
+  "Colour": {
+    "th": "สี",
+    "en": "Colour"
+  },
+  "Before and after calibration": {
+    "th": "ก่อนและหลังปรับสี",
+    "en": "Before and after calibration"
+  },
+  "skin": {
+    "th": "ผิวหนัง",
+    "en": "Skin"
+  },
+  "bruise": {
+    "th": "รอยฟกช้ำ",
+    "en": "Bruise"
+  },
+  "สีเนื้อกลาง": {
+    "th": "สีเนื้อกลาง",
+    "en": "Medium skin tone"
+  },
+  "สีเนื้อเข้ม": {
+    "th": "สีเนื้อเข้ม",
+    "en": "Dark skin tone"
+  },
+  "สีเนื้ออ่อน": {
+    "th": "สีเนื้ออ่อน",
+    "en": "Light skin tone"
+  },
+  "น้ำตาล": {
+    "th": "น้ำตาล",
+    "en": "Brown"
+  },
+  "น้ำตาลเข้ม": {
+    "th": "น้ำตาลเข้ม",
+    "en": "Dark brown"
+  },
+  "น้ำตาลอมส้ม": {
+    "th": "น้ำตาลอมส้ม",
+    "en": "Orange-brown"
+  },
+  "เหลืองน้ำตาล": {
+    "th": "เหลืองน้ำตาล",
+    "en": "Yellow-brown"
+  },
+  "แดงเข้ม": {
+    "th": "แดงเข้ม",
+    "en": "Dark red"
+  },
+  "น้ำเงินเข้ม": {
+    "th": "น้ำเงินเข้ม",
+    "en": "Dark blue"
+  },
+  "ม่วงอมชมพู": {
+    "th": "ม่วงอมชมพู",
+    "en": "Pink-purple"
+  },
+  "เขียวอมเหลือง": {
+    "th": "เขียวอมเหลือง",
+    "en": "Yellow-green"
+  },
+  "เหลืองอ่อน": {
+    "th": "เหลืองอ่อน",
+    "en": "Light yellow"
+  },
+  "เทาอ่อน": {
+    "th": "เทาอ่อน",
+    "en": "Light grey"
+  },
+  "ดำ": {
+    "th": "ดำ",
+    "en": "Black"
+  },
+  "ขาว": {
+    "th": "ขาว",
+    "en": "White"
+  },
+  "ยังวัดไม่ได้: ไม่ได้ระบุตำแหน่งไม้บรรทัดบนการ์ด": {
+    "th": "ยังวัดไม่ได้: ไม่มีตำแหน่งไม้บรรทัดบนการ์ด",
+    "en": "Cannot measure: the ruler position is missing."
+  },
+  "ยังวัดไม่ได้: พิกัดสเกลไม่ถูกต้อง": {
+    "th": "ยังวัดไม่ได้: พิกัดสเกลไม่ถูกต้อง",
+    "en": "Cannot measure: invalid reference coordinates."
+  },
+  "ยังวัดไม่ได้: ไม่พบ mask แผล": {
+    "th": "ยังวัดไม่ได้: ไม่พบขอบเขตแผล",
+    "en": "Cannot measure: no wound mask was detected."
+  },
+  "ยังวัดไม่ได้: ไม่พบ mask แผลที่มากพอ": {
+    "th": "ยังวัดไม่ได้: ขอบเขตแผลที่ตรวจพบมีขนาดเล็กเกินไป",
+    "en": "Cannot measure: the detected wound mask is too small."
+  },
+  "ประมาณจากรอยสีที่จับได้": {
+    "th": "ประมาณจากรอยสีที่ตรวจพบ",
+    "en": "Estimated from the detected coloured region"
+  },
+  "ค่าประมาณ: แผล/การ์ดต้องอยู่ระนาบใกล้กัน และกรอบกับ mask ต้องถูกตรวจด้วยตา": {
+    "th": "ค่าประมาณ: แผลและการ์ดต้องอยู่ระนาบใกล้กัน และต้องตรวจกรอบกับขอบเขตแผลด้วยสายตา",
+    "en": "Approximate measurements. Keep the bruise and card on nearly the same plane, and check the frame and mask visually."
+  },
+  "Cannot automatically detect skin: skin does not stand out from background": {
+    "th": "แยกผิวหนังจากพื้นหลังไม่ได้ ลองใช้ภาพที่เห็นบริเวณผิวชัดเจนขึ้น",
+    "en": "The skin could not be separated from the background. Try an image with a clearer skin region."
+  },
+  "Detected skin region is too small": {
+    "th": "บริเวณผิวหนังที่ตรวจพบมีขนาดเล็กเกินไป",
+    "en": "The detected skin region is too small."
+  },
+  "Normal skin pixels insufficient for color comparison": {
+    "th": "มีพิกเซลผิวปกติไม่พอสำหรับเปรียบเทียบสี",
+    "en": "There aren't enough normal skin pixels to compare colours."
+  },
+  "Bounding box is too small": {
+    "th": "กรอบบริเวณที่เลือกมีขนาดเล็กเกินไป",
+    "en": "The selected region is too small."
+  },
+  "Not enough valid pixels in this region for reliable analysis": {
+    "th": "มีพิกเซลที่ใช้วิเคราะห์ได้ไม่พอในบริเวณนี้",
+    "en": "There aren't enough usable pixels in this region for analysis."
+  },
+  "Not enough valid pixels in the specified box": {
+    "th": "มีพิกเซลที่ใช้วิเคราะห์ได้ไม่พอในกรอบที่เลือก",
+    "en": "There aren't enough usable pixels in the selected box."
+  },
+  "Invalid or expired session": {
+    "th": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่",
+    "en": "Your session is invalid or expired. Please sign in again."
+  },
+  "Database service unavailable.": {
+    "th": "ฐานข้อมูลไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง",
+    "en": "The database is unavailable. Please try again later."
+  },
+  "Name is required": {
+    "th": "กรุณากรอกชื่อ",
+    "en": "Enter your name."
+  },
+  "ลองเข้าสู่ระบบหลายครั้งเกินไป กรุณารอแล้วลองใหม่": {
+    "th": "ลองเข้าสู่ระบบหลายครั้งเกินไป กรุณารอแล้วลองใหม่",
+    "en": "Too many sign-in attempts. Please wait and try again."
+  },
+  "ตรวจสอบความปลอดภัยรหัสผ่านไม่ได้ กรุณาลองใหม่ภายหลัง": {
+    "th": "ตรวจสอบความปลอดภัยรหัสผ่านไม่ได้ กรุณาลองใหม่ภายหลัง",
+    "en": "We couldn't check this password for known breaches. Please try again later."
+  },
+  "ข้อมูลที่ส่งมาไม่ถูกต้อง กรุณาตรวจสอบอีเมลและความยาวรหัสผ่าน": {
+    "th": "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีเมลและความยาวรหัสผ่าน",
+    "en": "Check your email address and password length, then try again."
+  },
+  "Saved locally. Open history to retry saving to the server.": {
+    "th": "เก็บในเครื่องแล้ว เปิดหน้าประวัติเพื่อลองบันทึกลงเซิร์ฟเวอร์อีกครั้ง",
+    "en": "Saved locally. Open history to retry saving to the server."
+  },
+  "Scroll across the table to see all details.": {
+    "th": "เลื่อนตารางไปด้านข้างเพื่อดูข้อมูลครบทุกคอลัมน์",
+    "en": "Scroll across the table to see all details."
+  },
+  "เทาเข้ม": {
+    "th": "เทาเข้ม",
+    "en": "Dark grey"
+  },
+  "เทา": {
+    "th": "เทา",
+    "en": "Grey"
+  },
+  "น้ำตาลแดง": {
+    "th": "น้ำตาลแดง",
+    "en": "Red-brown"
+  },
+  "แดง": {
+    "th": "แดง",
+    "en": "Red"
+  },
+  "ม่วงเข้ม": {
+    "th": "ม่วงเข้ม",
+    "en": "Dark purple"
+  },
+  "ม่วง": {
+    "th": "ม่วง",
+    "en": "Purple"
+  },
+  "ม่วงอมแดง": {
+    "th": "ม่วงอมแดง",
+    "en": "Red-purple"
+  },
+  "ชมพู": {
+    "th": "ชมพู",
+    "en": "Pink"
+  },
+  "เขียวเข้ม": {
+    "th": "เขียวเข้ม",
+    "en": "Dark green"
+  },
+  "เขียวมะกอก": {
+    "th": "เขียวมะกอก",
+    "en": "Olive green"
+  },
+  "ส้ม": {
+    "th": "ส้ม",
+    "en": "Orange"
+  }
+}

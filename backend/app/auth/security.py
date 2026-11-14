@@ -1,75 +1,91 @@
-import os
-import time
-import json
-import hmac
 import hashlib
-import base64
-from typing import Dict, Any
+import hmac
+import os
+import re
+import secrets
+from pathlib import Path
+from typing import Any, Dict
 
-JWT_SECRET = os.getenv("JWT_SECRET", "bcc_clinical_jwt_secret_key_2026_forensic_secure")
+import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import VerificationError, InvalidHashError
+from dotenv import load_dotenv
+
+from app.auth.state import register_session
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+if len(JWT_SECRET.encode("utf-8")) < 32 or JWT_SECRET.startswith("REPLACE_"):
+    raise RuntimeError("JWT_SECRET must be configured with at least 32 random bytes; see backend/.env.example")
 JWT_ALGORITHM = "HS256"
-DEFAULT_EXPIRY_SECONDS = 86400 * 3  # 3 days token validity
-
-
-def base64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
-
-
-def base64url_decode(s: str) -> bytes:
-    padding = "=" * (4 - (len(s) % 4)) if (len(s) % 4) != 0 else ""
-    return base64.urlsafe_b64decode(s + padding)
-
+JWT_ISSUER = "bruise-calibrate-api"
+JWT_AUDIENCE = "bruise-web"
+DEFAULT_EXPIRY_SECONDS = 8 * 3600
+COOKIE_NAME = "bcc_session_v2"
+AUTH_ENV = os.getenv("AUTH_ENV", "development")
+if AUTH_ENV not in {"development", "production"}:
+    raise RuntimeError("AUTH_ENV must be development or production")
+COOKIE_SECURE = AUTH_ENV == "production"
+PASSWORD_MAX_LENGTH = 128
+_hasher = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
+_dummy_hash = _hasher.hash(secrets.token_urlsafe(32))
 
 def hash_password(pwd: str) -> str:
-    """Hash password using SHA-256 with clinical cryptographic salt."""
-    salt = "bcc_clinical_salt_2026"
-    return hashlib.sha256((pwd + salt).encode("utf-8")).hexdigest()
-
+    if not isinstance(pwd, str) or not 1 <= len(pwd) <= PASSWORD_MAX_LENGTH:
+        raise ValueError("Invalid password length")
+    return _hasher.hash(pwd)
 
 def verify_password(plain_pwd: str, hashed_pwd: str) -> bool:
-    """Safely compare password hashes in constant time."""
-    return hmac.compare_digest(hash_password(plain_pwd), hashed_pwd)
+    if not isinstance(plain_pwd, str) or not 1 <= len(plain_pwd) <= PASSWORD_MAX_LENGTH:
+        return False
+    if not isinstance(hashed_pwd, str) or not hashed_pwd:
+        _dummy_verify(plain_pwd)
+        return False
+    # Read-only compatibility for existing hashes; successful login immediately upgrades them.
+    if re.fullmatch(r"[0-9a-f]{64}", hashed_pwd):
+        legacy = hashlib.sha256((plain_pwd + "bcc_clinical_salt_2026").encode("utf-8")).hexdigest()
+        valid = hmac.compare_digest(legacy, hashed_pwd)
+        _dummy_verify(plain_pwd)
+        return valid
+    try:
+        return _hasher.verify(hashed_pwd, plain_pwd)
+    except (VerificationError, InvalidHashError):
+        if not hashed_pwd.startswith("$argon2id$"):
+            _dummy_verify(plain_pwd)
+        return False
 
+def _dummy_verify(pwd):
+    try:
+        _hasher.verify(_dummy_hash, pwd)
+    except VerificationError:
+        pass
+
+def password_needs_upgrade(hashed_pwd):
+    return not hashed_pwd.startswith("$argon2id$") or _hasher.check_needs_rehash(hashed_pwd)
 
 def create_access_token(payload: Dict[str, Any], expires_in: int = DEFAULT_EXPIRY_SECONDS) -> str:
-    """Generate an RFC 7519 HS256 JSON Web Token."""
-    header = {"alg": JWT_ALGORITHM, "typ": "JWT"}
+    import time
     now = int(time.time())
-    claims = {
-        **payload,
-        "iat": now,
-        "exp": now + expires_in,
-        "iss": "bruise-calibrate-api"
-    }
-
-    header_b64 = base64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-    payload_b64 = base64url_encode(json.dumps(claims, separators=(",", ":")).encode("utf-8"))
-    message = f"{header_b64}.{payload_b64}".encode("utf-8")
-
-    signature = hmac.new(JWT_SECRET.encode("utf-8"), message, hashlib.sha256).digest()
-    signature_b64 = base64url_encode(signature)
-
-    return f"{header_b64}.{payload_b64}.{signature_b64}"
-
+    claims = {k: payload[k] for k in ("sub", "email", "name", "role") if k in payload}
+    claims.update(iat=now, exp=now+min(expires_in, DEFAULT_EXPIRY_SECONDS), iss=JWT_ISSUER,
+                  aud=JWT_AUDIENCE, jti=secrets.token_urlsafe(32))
+    token = jwt.encode(claims, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    register_session(claims)
+    return token
 
 def decode_access_token(token: str) -> Dict[str, Any]:
-    """Verify signature and expiration of an HS256 JWT."""
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("Invalid JWT format")
-
-    header_b64, payload_b64, signature_b64 = parts
-    message = f"{header_b64}.{payload_b64}".encode("utf-8")
-    expected_sig = hmac.new(JWT_SECRET.encode("utf-8"), message, hashlib.sha256).digest()
-    expected_sig_b64 = base64url_encode(expected_sig)
-
-    if not hmac.compare_digest(signature_b64, expected_sig_b64):
-        raise ValueError("Invalid token signature")
-
-    claims = json.loads(base64url_decode(payload_b64).decode("utf-8"))
-
-    # Check expiration
-    if "exp" in claims and time.time() > claims["exp"]:
-        raise ValueError("Token has expired")
-
-    return claims
+    if not isinstance(token, str) or len(token) > 4096:
+        raise ValueError("Invalid session")
+    try:
+        claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], issuer=JWT_ISSUER,
+                            audience=JWT_AUDIENCE,
+                            options={"require": ["exp", "iat", "iss", "aud", "sub", "email", "jti"]})
+        if (not isinstance(claims["sub"], str) or not claims["sub"].isdigit()
+            or int(claims["sub"]) < 1 or not isinstance(claims["email"], str)
+            or not 1 <= len(claims["email"]) <= 254 or not isinstance(claims["jti"], str)
+            or len(claims["jti"]) < 32 or type(claims["exp"]) is not int
+            or type(claims["iat"]) is not int or claims["exp"]-claims["iat"] > DEFAULT_EXPIRY_SECONDS):
+            raise ValueError("Invalid session")
+        return claims
+    except (jwt.PyJWTError, TypeError, KeyError, ValueError) as exc:
+        raise ValueError("Invalid or expired session") from exc

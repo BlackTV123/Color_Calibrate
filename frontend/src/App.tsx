@@ -1,4 +1,12 @@
+import { t, useLanguage, getLocale } from './i18n';
 import React, { useState, useEffect, useRef } from 'react';
+import Icon from './Icon';
+import LanguageSwitcher from './LanguageSwitcher';
+import PasswordInput from './PasswordInput';
+import Home from './Home';
+import NavigationDrawer from './NavigationDrawer';
+import { readPage, isWorkspacePage, type Page, type WorkspacePage } from './navigation';
+import { validateRegistrationPassword, validatePhotoFile, AGE_UNAVAILABLE, formatAgeEstimate, isLegacyDemo, parseAnalysisResponse } from './ui';
 import AnalysisDetails, { type MeasuredColour } from './AnalysisDetails';
 import { HistoryAuthenticationError, type HistoryItem, nextCaseId, mapHistoryRecord, mergeHistory, readHistoryCache, persistHistoryCache, sendHistoryRecord, deleteHistoryRecord } from './history';
 
@@ -76,23 +84,26 @@ export interface AnalysisResult {
 
 const KEY_P = 'bcc_profile_v1';
 const KEY_S = 'bcc_session_v1';
-const KEY_TOKEN = 'bcc_token_v1';
+// This marker coordinates tabs; authentication is only in the HttpOnly cookie.
+const KEY_SESSION = 'bcc_session_marker_v2';
 
 function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem(KEY_TOKEN);
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
+  return { 'X-Requested-With': 'BruiseWeb' };
 }
 
 export default function App() {
+  useLanguage();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isCheckingSession, setIsCheckingSession] = useState(() => Boolean(localStorage.getItem(KEY_TOKEN) || localStorage.getItem(KEY_S)));
+  const [isCheckingSession, setIsCheckingSession] = useState(() => Boolean(localStorage.getItem(KEY_SESSION) || localStorage.getItem(KEY_S)));
   const [sessionVersion, setSessionVersion] = useState(0);
   const verifiedTokenRef = useRef<string | null>(null);
-  const [authMode, setAuthMode] = useState<'signin' | 'register'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'register'>(() => readPage(window.location.hash) === 'register' ? 'register' : 'signin');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [authSuccessMsg, setAuthSuccessMsg] = useState('');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
   const [dbStatus, setDbStatus] = useState<'connected' | 'offline' | 'checking'>('checking');
 
   // Register form states
@@ -102,7 +113,39 @@ export default function App() {
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
 
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'analysis' | 'history' | 'profile'>('dashboard');
+  const [currentPage, setRoute] = useState<Page>(() => readPage(window.location.hash));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pendingPageRef = useRef<WorkspacePage>(isWorkspacePage(readPage(window.location.hash)) ? readPage(window.location.hash) as WorkspacePage : 'dashboard');
+  function setCurrentPage(page: Page, replace = false) {
+    if (isWorkspacePage(page) && !isAuthenticated && !isCheckingSession) {
+      pendingPageRef.current = page;
+      page = 'login';
+    }
+    setMenuOpen(false);
+    if (page === 'login' || page === 'register') { setAuthMode(page === 'login' ? 'signin' : 'register'); setLoginError(''); }
+    if (page === 'register') setAuthSuccessMsg('');
+    setRoute(page);
+    if (replace) window.history.replaceState(null, '', '#' + page);
+    else if (window.location.hash !== '#' + page) window.location.hash = page;
+  }
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const page = readPage(window.location.hash);
+      setRoute(page);
+      setMenuOpen(false);
+      if (page === 'login' || page === 'register') setAuthMode(page === 'login' ? 'signin' : 'register');
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (isCheckingSession) return;
+    if (!isAuthenticated && isWorkspacePage(currentPage)) setCurrentPage(currentPage, true);
+    if (isAuthenticated && (currentPage === 'login' || currentPage === 'register')) setCurrentPage(pendingPageRef.current, true);
+  }, [isAuthenticated, isCheckingSession, currentPage]);
+
   const [selectedCase, setSelectedCase] = useState<HistoryItem | null>(null);
 
   const [profile, setProfile] = useState<UserProfile>(() => {
@@ -115,7 +158,8 @@ export default function App() {
   });
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | string[] | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [busyRecord, setBusyRecord] = useState<string | null>(null);
   const [cacheReady, setCacheReady] = useState('');
   const historyRef = useRef<HistoryItem[]>([]);
@@ -143,26 +187,30 @@ export default function App() {
     setSelectedCase(null);
     setSaveToast(null);
     clearAnalysisForm();
+    setIsSavingProfile(false);
+    setProfileFeedback(null);
   }
 
   function expireSession(token: string, message = 'เซสชันหมดอายุหรือยืนยันตัวตนไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่') {
-    if ((localStorage.getItem(KEY_TOKEN) || '') !== token) return;
+    if ((localStorage.getItem(KEY_SESSION) || '') !== token) return;
     localStorage.removeItem(KEY_S);
-    localStorage.removeItem(KEY_TOKEN);
+    localStorage.removeItem(KEY_SESSION);
     resetSessionView();
     setIsCheckingSession(false);
     setAuthMode('signin');
+    setCurrentPage('login');
     setLoginEmail(profile.email);
     setLoginError(message);
   }
 
   useEffect(() => {
-    const token = localStorage.getItem(KEY_TOKEN) || '';
+    localStorage.removeItem('bcc_token_v1'); // Remove credentials left by older builds.
+    const token = localStorage.getItem(KEY_SESSION) || '';
     const hadSession = localStorage.getItem(KEY_S) === '1';
     if (!token) {
       localStorage.removeItem(KEY_S);
       setIsCheckingSession(false);
-      if (hadSession) setLoginError('กรุณาเข้าสู่ระบบใหม่เพื่อยืนยันตัวตน');
+      if (hadSession) { setCurrentPage('login'); setLoginError('กรุณาเข้าสู่ระบบใหม่เพื่อยืนยันตัวตน'); }
       return;
     }
     let cancelled = false;
@@ -171,13 +219,13 @@ export default function App() {
     async function restoreSession() {
       try {
         const response = await fetch('/api/auth/me', {
-          headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
+          headers: getAuthHeaders(), signal: controller.signal,
         });
-        if (cancelled || token !== localStorage.getItem(KEY_TOKEN)) return;
+        if (cancelled || token !== localStorage.getItem(KEY_SESSION)) return;
         if (response.status === 401) { expireSession(token); return; }
         if (!response.ok) throw new Error('ตรวจสอบการเข้าสู่ระบบไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง');
         const data = await response.json();
-        if (cancelled || token !== localStorage.getItem(KEY_TOKEN)) return;
+        if (cancelled || token !== localStorage.getItem(KEY_SESSION)) return;
         const email = typeof data.user?.email === 'string' ? data.user.email.trim().toLowerCase() : '';
         if (!email || data.success !== true) { expireSession(token); return; }
         const restored: UserProfile = {
@@ -190,12 +238,13 @@ export default function App() {
         setProfile(restored);
         setIsAuthenticated(true);
       } catch (error) {
-        if (!cancelled && token === localStorage.getItem(KEY_TOKEN)) {
+        if (!cancelled && token === localStorage.getItem(KEY_SESSION)) {
+          setCurrentPage('login');
           setLoginEmail(profile.email);
           setLoginError(error instanceof Error ? error.message : 'ตรวจสอบการเข้าสู่ระบบไม่สำเร็จ');
         }
       } finally {
-        if (!cancelled && token === localStorage.getItem(KEY_TOKEN)) setIsCheckingSession(false);
+        if (!cancelled && token === localStorage.getItem(KEY_SESSION)) setIsCheckingSession(false);
       }
     }
     restoreSession();
@@ -204,9 +253,9 @@ export default function App() {
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== KEY_TOKEN && event.key !== null) return;
+      if (event.key !== KEY_SESSION && event.key !== null) return;
       resetSessionView();
-      setIsCheckingSession(Boolean(localStorage.getItem(KEY_TOKEN)));
+      setIsCheckingSession(Boolean(localStorage.getItem(KEY_SESSION)));
       setSessionVersion(value => value + 1);
     };
     window.addEventListener('storage', onStorage);
@@ -215,11 +264,11 @@ export default function App() {
 
   useEffect(() => {
     const email = profile.email.trim().toLowerCase();
-    const token = localStorage.getItem(KEY_TOKEN);
+    const token = localStorage.getItem(KEY_SESSION);
     if (!isAuthenticated || !email || !token || verifiedTokenRef.current !== token) return;
     let cancelled = false;
     readHistoryCache(email).then(cached => {
-      if (cancelled || token !== localStorage.getItem(KEY_TOKEN)) return;
+      if (cancelled || token !== localStorage.getItem(KEY_SESSION)) return;
       updateHistory(current => remoteLoadedRef.current === token || current.length
         ? mergeHistory(current, cached) : cached);
       setCacheReady(`${token}|${email}`);
@@ -229,10 +278,10 @@ export default function App() {
 
   useEffect(() => {
     const email = profile.email.trim().toLowerCase();
-    const token = localStorage.getItem(KEY_TOKEN);
+    const token = localStorage.getItem(KEY_SESSION);
     if (!isAuthenticated || !email || !token || verifiedTokenRef.current !== token || cacheReady !== `${token}|${email}`) return;
     persistHistoryCache(email, history).catch(() => {
-      if (token === localStorage.getItem(KEY_TOKEN) && history.some(row => row.syncStatus === 'pending')) {
+      if (token === localStorage.getItem(KEY_SESSION) && history.some(row => row.syncStatus === 'pending')) {
         setHistoryError('เก็บรายการรอซิงก์ในเครื่องไม่สำเร็จ กรุณาอย่าปิดหน้านี้จนกว่าจะบันทึก MySQL สำเร็จ');
       }
     });
@@ -260,11 +309,12 @@ export default function App() {
   // Check backend health & MySQL status, load records from MySQL for specific user
   async function refreshFromDatabase(targetEmail?: string) {
     const activeEmail = (targetEmail || profile.email).trim().toLowerCase();
-    const token = localStorage.getItem(KEY_TOKEN);
+    const token = localStorage.getItem(KEY_SESSION);
     const requestId = ++refreshIdRef.current;
     const revision = historyRevisionRef.current;
-    const currentSession = () => token === localStorage.getItem(KEY_TOKEN) && token === verifiedTokenRef.current && requestId === refreshIdRef.current;
+    const currentSession = () => token === localStorage.getItem(KEY_SESSION) && token === verifiedTokenRef.current && requestId === refreshIdRef.current;
     if (!token || verifiedTokenRef.current !== token) return;
+    setIsLoadingHistory(true);
     try {
       const healthRes = await fetch('/api/health');
       if (currentSession()) {
@@ -275,7 +325,7 @@ export default function App() {
       const records: HistoryItem[] = [];
       let offset = 0;
       while (true) {
-        const res = await fetch(`/api/records?limit=500&offset=${offset}`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`/api/records?limit=500&offset=${offset}`, { headers: getAuthHeaders() });
         if (!currentSession()) return;
         if (res.status === 401) { expireSession(token); return; }
         if (!res.ok) throw new Error('โหลดประวัติจาก MySQL ไม่สำเร็จ ข้อมูลในเครื่องยังอยู่');
@@ -291,7 +341,7 @@ export default function App() {
       setHistoryError(null);
     } catch (error) {
       if (currentSession()) setHistoryError(error instanceof Error ? error.message : 'โหลดประวัติไม่สำเร็จ');
-    }
+    } finally { if (currentSession()) setIsLoadingHistory(false); }
   }
 
   // Auto-refresh history and database health every 20 seconds when logged in
@@ -299,11 +349,10 @@ export default function App() {
     if (!isAuthenticated || !profile.email) return;
 
     refreshFromDatabase(profile.email);
-    const interval = setInterval(() => {
-      refreshFromDatabase(profile.email);
-    }, 20000);
-
-    return () => clearInterval(interval);
+    const refreshVisible = () => { if (document.visibilityState === 'visible') refreshFromDatabase(profile.email); };
+    const interval = setInterval(refreshVisible, 20000);
+    document.addEventListener('visibilitychange', refreshVisible);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', refreshVisible); };
   }, [isAuthenticated, profile.email]);
 
   // Analysis form states
@@ -318,6 +367,58 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [saveToast, setSaveToast] = useState<string | null>(null);
+  const [previewStatus, setPreviewStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null);
+  const [referencePoint, setReferencePoint] = useState<[number, number] | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileFeedback, setProfileFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  const analysisAbortRef = useRef<AbortController | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const previewVersionRef = useRef(0);
+  const reportRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!selectedCase || !reportRef.current) return;
+    const report = reportRef.current;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    const background = [...document.querySelectorAll<HTMLElement>('.app-view > :not(.modal-backdrop)')];
+    const inertStates = background.map(element => element.inert);
+    background.forEach(element => { element.inert = true; });
+    document.body.style.overflow = 'hidden';
+    const focusable = () => [...report.querySelectorAll<HTMLElement>(
+      'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])'
+    )].filter(element => element.getClientRects().length > 0);
+    const close = report.querySelector<HTMLElement>('[data-close-report]');
+    (close || report).focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); setSelectedCase(null); return; }
+      if (event.key !== 'Tab') return;
+      const elements = focusable();
+      const first = elements[0], last = elements[elements.length - 1];
+      if (!first) { event.preventDefault(); report.focus(); return; }
+      if (event.shiftKey && (document.activeElement === first || !report.contains(document.activeElement))) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !report.contains(document.activeElement))) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      background.forEach((element, i) => { element.inert = inertStates[i]; });
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [selectedCase]);
+
+  useEffect(() => {
+    if (isCheckingSession) return;
+    const frame = requestAnimationFrame(() => document.getElementById('page-title-' + currentPage)?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [currentPage, isAuthenticated, isCheckingSession]);
+
+
 
   useEffect(() => {
     if (!caseIdEditedRef.current && !isSavingDb) setCaseId(nextCaseId(history));
@@ -332,7 +433,21 @@ export default function App() {
   const workingImageDataRef = useRef<ImageData | null>(null);
 
   // Reset image canvas and analysis state
+  useEffect(() => () => {
+    analysisAbortRef.current?.abort();
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
+
   function removeImage() {
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
+    previewVersionRef.current++;
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
+    setIsAnalyzing(false);
+    setPreviewStatus('idle');
+    setPreviewMessage(null);
+    setReferencePoint(null);
     setFile(null);
     setAnalysisResult(null);
     setAnalysisError(null);
@@ -361,7 +476,6 @@ export default function App() {
   // History filters
   const [searchHistory, setSearchHistory] = useState('');
   const [filterAge, setFilterAge] = useState('');
-  const [filterCal, setFilterCal] = useState('');
 
   // Clear any active uploaded image and form whenever user account changes
   useEffect(() => {
@@ -372,12 +486,13 @@ export default function App() {
     e.preventDefault();
     setLoginError('');
     setAuthSuccessMsg('');
+    if ([...loginPassword].length > 128) { setLoginError('รหัสผ่านต้องมีความยาวไม่เกิน 128 ตัวอักษร'); return; }
     setIsSubmittingAuth(true);
 
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           email: loginEmail,
           password: loginPassword
@@ -386,10 +501,11 @@ export default function App() {
 
       if (res.ok) {
         const data = await res.json();
-        if (!data.access_token) throw new Error('Server did not return a login token');
+        if (data.session_authenticated !== true) throw new Error('Server did not establish a session');
+        const marker = crypto.randomUUID();
         localStorage.setItem(KEY_S, '1');
-        localStorage.setItem(KEY_TOKEN, data.access_token);
-        verifiedTokenRef.current = data.access_token;
+        localStorage.setItem(KEY_SESSION, marker);
+        verifiedTokenRef.current = marker;
         setIsCheckingSession(false);
         const userEmail = (data.user?.email || loginEmail).trim().toLowerCase();
         if (data.user) {
@@ -410,8 +526,12 @@ export default function App() {
         setSelectedCase(null);
         clearAnalysisForm();
 
+        setLoginPassword('');
+        setRegPassword('');
+        setRegConfirmPassword('');
+        setLogoutError('');
         setIsAuthenticated(true);
-        setCurrentPage('dashboard');
+        setCurrentPage(pendingPageRef.current);
         refreshFromDatabase(userEmail);
         return;
       } else {
@@ -430,12 +550,19 @@ export default function App() {
     setLoginError('');
     setAuthSuccessMsg('');
 
+    const registrationEmail = regEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@gmail\.com$/.test(registrationEmail)) {
+      setLoginError("กรุณาใช้อีเมลที่ลงท้ายด้วย @gmail.com เท่านั้น");
+      return;
+    }
+
     if (regPassword !== regConfirmPassword) {
       setLoginError('รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน');
       return;
     }
-    if (regPassword.length < 4) {
-      setLoginError('รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร');
+    const passwordError = validateRegistrationPassword(regPassword);
+    if (passwordError) {
+      setLoginError(passwordError);
       return;
     }
 
@@ -443,10 +570,10 @@ export default function App() {
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           name: regName,
-          email: regEmail,
+          email: registrationEmail,
           password: regPassword
         })
       });
@@ -456,10 +583,12 @@ export default function App() {
         throw new Error(err.detail || 'การลงทะเบียนไม่สำเร็จ');
       }
 
-      setAuthSuccessMsg('ลงทะเบียนสำเร็จเรียบร้อย! สามารถใช้อีเมลและรหัสผ่านนี้เข้าสู่ระบบได้ทันที');
-      setLoginEmail(regEmail);
-      setLoginPassword(regPassword);
-      setAuthMode('signin');
+      setAuthSuccessMsg("รับคำขอสมัครสมาชิกแล้ว หากมีบัญชีอยู่แล้วให้เข้าสู่ระบบด้วยรหัสผ่านเดิม");
+      setLoginEmail(registrationEmail);
+      setLoginPassword('');
+      setRegPassword('');
+      setRegConfirmPassword('');
+      setCurrentPage('login');
     } catch (err: any) {
       setLoginError(err.message || 'เกิดข้อผิดพลาดในการลงทะเบียน');
     } finally {
@@ -467,40 +596,53 @@ export default function App() {
     }
   }
 
-  function handleLogout() {
-    localStorage.removeItem(KEY_S);
-    localStorage.removeItem(KEY_TOKEN);
-    resetSessionView();
-    setIsCheckingSession(false);
-    setLoginError('');
+  async function handleLogout() {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    setLogoutError('');
+    const marker = localStorage.getItem(KEY_SESSION);
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST', headers: getAuthHeaders() });
+      if (!response.ok) throw new Error('ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง');
+      if (marker !== localStorage.getItem(KEY_SESSION)) return;
+      localStorage.removeItem(KEY_S);
+      localStorage.removeItem(KEY_SESSION);
+      resetSessionView();
+      setIsCheckingSession(false);
+      setLoginPassword('');
+      setRegPassword('');
+      setRegConfirmPassword('');
+      setLoginError('');
+      setCurrentPage('home');
+    } catch {
+      setLogoutError('ติดต่อเซิร์ฟเวอร์เพื่อออกจากระบบไม่ได้ กรุณาลองอีกครั้ง');
+    } finally { setIsLoggingOut(false); }
   }
 
-  async function handleSaveProfile(e: React.FormEvent) {
-    e.preventDefault();
-    const token = localStorage.getItem(KEY_TOKEN) || '';
-    localStorage.setItem(KEY_P, JSON.stringify(profile));
-
+  async function handleSaveProfile(event: React.FormEvent) {
+    event.preventDefault();
+    if (isSavingProfile) return;
+    const token = localStorage.getItem(KEY_SESSION) || '';
+    const next = { ...profile, name: profile.name.trim() };
+    if (!next.name) { setProfileFeedback({ kind: 'error', message: 'กรุณากรอกชื่อผู้ใช้' }); return; }
+    setIsSavingProfile(true);
+    setProfileFeedback(null);
     try {
-      const res = await fetch('/api/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify({
-          name: profile.name,
-          email: profile.email
-        })
+      const response = await fetch('/api/profile', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ name: next.name, email: next.email }),
       });
-      if (res.status === 401) { expireSession(token); return; }
-      if (res.ok) {
-        alert('บันทึกข้อมูลส่วนตัวลงใน MySQL เรียบร้อยแล้ว');
-        return;
+      if (token !== localStorage.getItem(KEY_SESSION)) return;
+      if (response.status === 401) { expireSession(token); return; }
+      if (!response.ok) throw new Error('บันทึกชื่อบนเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองอีกครั้ง');
+      localStorage.setItem(KEY_P, JSON.stringify(next));
+      setProfile(next);
+      setProfileFeedback({ kind: 'success', message: 'บันทึกชื่อผู้ใช้ใน MySQL แล้ว' });
+    } catch (error) {
+      if (token === localStorage.getItem(KEY_SESSION)) {
+        setProfileFeedback({ kind: 'error', message: error instanceof Error ? error.message : 'ติดต่อเซิร์ฟเวอร์ไม่ได้ ข้อความที่กรอกยังอยู่ กรุณาลองอีกครั้ง' });
       }
-    } catch (err) {
-      console.warn('Could not sync profile to backend:', err);
-    }
-    alert('บันทึกข้อมูลส่วนตัวเรียบร้อยแล้ว');
+    } finally { if (token === localStorage.getItem(KEY_SESSION)) setIsSavingProfile(false); }
   }
 
   function getInitials(name: string) {
@@ -514,51 +656,94 @@ export default function App() {
 
   // File loading & canvas initialization
   function loadFile(selectedFile: File) {
+    const error = validatePhotoFile(selectedFile);
+    if (error) { setAnalysisError(error); return; }
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
+    setIsAnalyzing(false);
+    const version = ++previewVersionRef.current;
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     setFile(selectedFile);
     setAnalysisError(null);
     setAnalysisResult(null);
     setRefPixel(null);
+    setReferencePoint(null);
     setGainText('—');
     setIsManualCalibrated(false);
-
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const img = new Image();
-      img.onload = () => {
-        const c = canvasRef.current;
-        if (!c) return;
-        const ctx = c.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return;
-
-        const maxW = 1000;
-        const maxH = 650;
-        const scale = Math.min(maxW / img.width, maxH / img.height, 1);
-        c.width = Math.max(1, Math.round(img.width * scale));
-        c.height = Math.max(1, Math.round(img.height * scale));
-        ctx.drawImage(img, 0, 0, c.width, c.height);
-
-        originalImageDataRef.current = ctx.getImageData(0, 0, c.width, c.height);
-        workingImageDataRef.current = new ImageData(
-          new Uint8ClampedArray(originalImageDataRef.current.data),
-          c.width,
-          c.height
-        );
-      };
-      img.src = ev.target?.result as string;
+    originalImageDataRef.current = null;
+    workingImageDataRef.current = null;
+    setPreviewStatus('loading');
+    setPreviewMessage(null);
+    const url = URL.createObjectURL(selectedFile);
+    previewUrlRef.current = url;
+    const image = new Image();
+    const release = () => {
+      URL.revokeObjectURL(url);
+      if (previewUrlRef.current === url) previewUrlRef.current = null;
     };
-    reader.readAsDataURL(selectedFile);
+    const unavailable = () => {
+      if (version !== previewVersionRef.current) { release(); return; }
+      setPreviewStatus('unavailable');
+      setPreviewMessage('เบราว์เซอร์แสดงตัวอย่างไฟล์นี้ไม่ได้ คุณยังส่งภาพไปวิเคราะห์กับ backend ได้');
+      release();
+    };
+    image.onload = () => {
+      if (version !== previewVersionRef.current) { release(); return; }
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext('2d', { willReadFrequently: true });
+      if (!canvas || !context) { unavailable(); return; }
+      try {
+        const scale = Math.min(1000 / image.width, 650 / image.height, 1);
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        originalImageDataRef.current = context.getImageData(0, 0, canvas.width, canvas.height);
+        workingImageDataRef.current = new ImageData(
+          new Uint8ClampedArray(originalImageDataRef.current.data), canvas.width, canvas.height
+        );
+        setPreviewStatus('ready');
+      } catch { unavailable(); }
+      release();
+    };
+    image.onerror = unavailable;
+    image.src = url;
   }
 
-  function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    const c = canvasRef.current;
-    if (!c || !workingImageDataRef.current) return;
-    const r = c.getBoundingClientRect();
-    const x = Math.floor(((e.clientX - r.left) * c.width) / r.width);
-    const y = Math.floor(((e.clientY - r.top) * c.height) / r.height);
-    const d = workingImageDataRef.current.data;
-    const i = (y * c.width + x) * 4;
-    const p: [number, number, number] = [d[i], d[i + 1], d[i + 2]];
-    setRefPixel(p);
+  function inspectReferencePoint(x: number, y: number) {
+    const canvas = canvasRef.current;
+    const pixels = workingImageDataRef.current;
+    if (!canvas || !pixels) return;
+    x = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
+    y = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
+    const index = (y * canvas.width + x) * 4;
+    setReferencePoint([x, y]);
+    setRefPixel([pixels.data[index], pixels.data[index + 1], pixels.data[index + 2]]);
+  }
+
+  function handleCanvasClick(event: React.MouseEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    inspectReferencePoint((event.clientX - bounds.left) * canvas.width / bounds.width,
+      (event.clientY - bounds.top) * canvas.height / bounds.height);
+  }
+
+  function handleCanvasKeyDown(event: React.KeyboardEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas || !workingImageDataRef.current) return;
+    let [x, y] = referencePoint || [Math.floor(canvas.width / 2), Math.floor(canvas.height / 2)];
+    const step = event.shiftKey ? 10 : 1;
+    switch (event.key) {
+      case 'ArrowLeft': x -= step; break;
+      case 'ArrowRight': x += step; break;
+      case 'ArrowUp': y -= step; break;
+      case 'ArrowDown': y += step; break;
+      case 'Home': x = Math.floor(canvas.width / 2); y = Math.floor(canvas.height / 2); break;
+      case 'Enter': case ' ': break;
+      default: return;
+    }
+    event.preventDefault();
+    inspectReferencePoint(x, y);
   }
 
   function _applyNeutralCalibration() {
@@ -612,122 +797,36 @@ export default function App() {
     }
   }, [currentPage, analysisResult]);
 
-  // Run full analysis (via FastAPI backend /api/analyze with client fallback)
+  // Report only validated backend analysis results; keep input available on errors.
   async function runAnalysis() {
-    if (!file) return;
+    if (!file || isAnalyzing) return;
+    analysisAbortRef.current?.abort();
+    const controller = new AbortController();
+    analysisAbortRef.current = controller;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
     setIsAnalyzing(true);
     setAnalysisError(null);
-
+    setAnalysisResult(null);
     try {
       const formData = new FormData();
       formData.append('file', file);
-
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.detail || `Analysis request failed (${res.status})`);
+      const response = await fetch('/api/analyze', { method: 'POST', headers: getAuthHeaders(), body: formData, signal: controller.signal });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(typeof error.detail === 'string' ? error.detail : 'เซิร์ฟเวอร์วิเคราะห์ภาพไม่สำเร็จ กรุณาลองอีกครั้ง');
       }
-
-      const data: AnalysisResult = await res.json();
-      setAnalysisResult(data);
-
-    } catch (err: unknown) {
-      console.warn('Backend /api/analyze offline or returned error. Falling back to in-browser estimator:', err);
-      // Client-side fallback analyzer for offline demo capability
-      runClientFallbackAnalysis();
+      const data = parseAnalysisResponse(await response.json().catch(() => { throw new Error('รูปแบบผลวิเคราะห์จากเซิร์ฟเวอร์ไม่ถูกต้อง กรุณาลองอีกครั้ง'); }));
+      if (analysisAbortRef.current === controller) setAnalysisResult(data);
+    } catch (error) {
+      if (analysisAbortRef.current !== controller) return;
+      setAnalysisError(timedOut ? 'การวิเคราะห์ใช้เวลานานเกินไป กรุณาลองอีกครั้งหรือลดขนาดภาพ'
+        : error instanceof TypeError ? 'ติดต่อเซิร์ฟเวอร์วิเคราะห์ไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง' : error instanceof Error && error.name !== 'AbortError' ? error.message
+        : 'ติดต่อเซิร์ฟเวอร์วิเคราะห์ไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง');
     } finally {
-      setIsAnalyzing(false);
+      window.clearTimeout(timeout);
+      if (analysisAbortRef.current === controller) { analysisAbortRef.current = null; setIsAnalyzing(false); }
     }
-  }
-
-  function runClientFallbackAnalysis() {
-    if (!workingImageDataRef.current || !file) return;
-    const d = workingImageDataRef.current.data;
-    const histR = new Array(32).fill(0);
-    const histG = new Array(32).fill(0);
-    const histB = new Array(32).fill(0);
-
-    let sr = 0, sg = 0, sb = 0, n = 0;
-    const bins: Record<string, number> = {};
-    const step = Math.max(1, Math.floor(d.length / 4 / 90000));
-
-    for (let p = 0; p < d.length / 4; p += step) {
-      const i = p * 4;
-      const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
-      if (a < 200) continue;
-      sr += r; sg += g; sb += b; n++;
-      histR[Math.min(31, Math.floor(r / 8))]++;
-      histG[Math.min(31, Math.floor(g / 8))]++;
-      histB[Math.min(31, Math.floor(b / 8))]++;
-
-      const qr = Math.min(255, Math.round(r / 32) * 32);
-      const qg = Math.min(255, Math.round(g / 32) * 32);
-      const qb = Math.min(255, Math.round(b / 32) * 32);
-      const key = `${qr},${qg},${qb}`;
-      bins[key] = (bins[key] || 0) + 1;
-    }
-
-    const mean = [Math.round(sr / n), Math.round(sg / n), Math.round(sb / n)];
-    const light = Math.round(((Math.max(...mean) + Math.min(...mean)) / 2 / 255) * 100);
-    const dominantColors = Object.entries(bins)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([k, v]) => {
-        const rgb = k.split(',').map(Number);
-        const hex = '#' + rgb.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
-        return {
-          name: `RGB ${rgb.join(',')}`,
-          hex,
-          percent: Math.round((v / n) * 100)
-        };
-      });
-
-    const fallbackResult: AnalysisResult = {
-      filename: file.name,
-      has_wound: true,
-      detection_note: 'In-browser client estimate (Backend service offline)',
-      calibration: {
-        status: isManualCalibrated ? 'Calibrated via neutral reference' : 'Uncalibrated',
-        is_calibrated: isManualCalibrated,
-        loocv_median_de00: isManualCalibrated ? 6.2 : null,
-      },
-      color_profile: {
-        mean_rgb: mean,
-        mean_lightness: light,
-        dominant_colors: dominantColors
-      },
-      wound_size: {
-        status: 'ประมาณจากพิกเซลตัวอย่าง',
-        width_cm: 3.4,
-        length_cm: 5.2,
-        area_cm2: 14.1,
-        pixel_area: n,
-        note: 'ต้องตรวจ overlay ด้วยตาประกอบการวิจัย'
-      },
-      age_estimate: {
-        status: 'ช่วงวันที่สอดคล้องกับสี (ต้นแบบ)',
-        range: '2–5 วัน',
-        midpoint_days: 3.5,
-        confidence: 'จำกัด — ใช้เป็นช่วงคัดกรองของต้นแบบเท่านั้น',
-        confidence_score: 55,
-        reason: 'กลุ่มสีเด่นม่วงอมชมพู/แดงเข้มตามเกณฑ์ต้นแบบ',
-        note: 'สีของแผลไม่สามารถบอกอายุแผลได้อย่างแม่นยำ'
-      },
-      histograms: {
-        wound: {
-          bins: Array.from({ length: 32 }, (_, i) => i * 8),
-          raw: { r: histR, g: histG, b: histB },
-          cal: { r: histR, g: histG, b: histB }
-        }
-      }
-    };
-
-    setAnalysisResult(fallbackResult);
-
   }
 
   async function saveAnalysisToHistory() {
@@ -736,13 +835,13 @@ export default function App() {
     setIsSavingDb(true);
     setHistoryError(null);
     const email = profile.email.trim().toLowerCase();
-    const token = localStorage.getItem(KEY_TOKEN) || '';
+    const token = localStorage.getItem(KEY_SESSION) || '';
     const clientId = crypto.randomUUID();
     const record: HistoryItem = {
       id: `local-${clientId}`, clientId, syncStatus: 'pending', date: new Date().toISOString(),
       caseId: caseId.trim() || nextCaseId(historyRef.current),
       file: file?.name || analysisResult.filename, bodySite: bodySite || 'Not specified', notes,
-      age: analysisResult.age_estimate.range || 'Mixed / indeterminate',
+      age: formatAgeEstimate(analysisResult),
       calibrated: analysisResult.calibration.is_calibrated,
       colors: analysisResult.color_profile.dominant_colors.filter(c => /^#[0-9a-f]{6}$/i.test(c.hex)).slice(0, 3).map(c => c.hex),
       thumbnail: analysisResult.previews?.overlay || analysisResult.previews?.calibrated || analysisResult.previews?.original || null,
@@ -756,24 +855,24 @@ export default function App() {
     let savedToDatabase = false;
     const next = [record, ...historyRef.current];
     try { await persistHistoryCache(email, next); cached = true; } catch { /* Server save can still succeed. */ }
-    if (token !== (localStorage.getItem(KEY_TOKEN) || '')) { saveInFlightRef.current = false; setIsSavingDb(false); return; }
+    if (token !== (localStorage.getItem(KEY_SESSION) || '')) { saveInFlightRef.current = false; setIsSavingDb(false); return; }
     historyRevisionRef.current++;
     updateHistory(current => [record, ...current]);
     try {
       const saved = await sendHistoryRecord(record, token);
       savedToDatabase = true;
-      if (token !== localStorage.getItem(KEY_TOKEN)) return;
+      if (token !== localStorage.getItem(KEY_SESSION)) return;
       historyRevisionRef.current++;
       updateHistory(current => current.map(row => row.id === record.id ? saved : row));
       setSaveToast('บันทึก MySQL สำเร็จ');
     } catch (error) {
-      if (token !== (localStorage.getItem(KEY_TOKEN) || '')) return;
+      if (token !== (localStorage.getItem(KEY_SESSION) || '')) return;
       if (error instanceof HistoryAuthenticationError) { expireSession(token); return; }
       setHistoryError(cached
-        ? `${error instanceof Error ? error.message : 'ติดต่อ MySQL ไม่สำเร็จ'} — เก็บในเครื่องแล้ว กดบันทึก MySQL ในหน้าประวัติเพื่อลองใหม่`
+        ? [error instanceof Error ? error.message : 'ติดต่อ MySQL ไม่สำเร็จ', 'Saved locally. Open history to retry saving to the server.']
         : 'ยังบันทึกทั้ง MySQL และในเครื่องไม่สำเร็จ กรุณาอย่าปิดหน้านี้และลองบันทึกอีกครั้ง');
     } finally {
-      if ((cached || savedToDatabase) && token === localStorage.getItem(KEY_TOKEN)) {
+      if ((cached || savedToDatabase) && token === localStorage.getItem(KEY_SESSION)) {
         caseIdEditedRef.current = false;
         setCaseId(nextCaseId(historyRef.current));
       }
@@ -788,31 +887,31 @@ export default function App() {
     recordBusyRef.current = true;
     setBusyRecord(record.id);
     setHistoryError(null);
-    const token = localStorage.getItem(KEY_TOKEN) || '';
+    const token = localStorage.getItem(KEY_SESSION) || '';
     historyRevisionRef.current++;
     try {
       const saved = await sendHistoryRecord(record, token);
-      if (token !== localStorage.getItem(KEY_TOKEN)) return;
+      if (token !== localStorage.getItem(KEY_SESSION)) return;
       historyRevisionRef.current++;
       updateHistory(current => current.map(row => row.id === record.id ? saved : row));
       setSelectedCase(current => current?.id === record.id ? saved : current);
     } catch (error) {
       if (error instanceof HistoryAuthenticationError) { expireSession(token); return; }
-      if (token === (localStorage.getItem(KEY_TOKEN) || '')) setHistoryError(error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ รายการยังรอซิงก์');
+      if (token === (localStorage.getItem(KEY_SESSION) || '')) setHistoryError(error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ รายการยังรอซิงก์');
     } finally { recordBusyRef.current = false; setBusyRecord(null); }
   }
 
   async function deleteHistoryItem(id: string) {
     const record = historyRef.current.find(row => row.id === id);
-    if (!record || recordBusyRef.current || !confirm('ต้องการลบประวัติการวิเคราะห์รายการนี้หรือไม่?')) return;
+    if (!record || recordBusyRef.current || !confirm(t('ต้องการลบประวัติการวิเคราะห์รายการนี้หรือไม่?'))) return;
     recordBusyRef.current = true;
     setBusyRecord(id);
     setHistoryError(null);
-    const token = localStorage.getItem(KEY_TOKEN) || '';
+    const token = localStorage.getItem(KEY_SESSION) || '';
     historyRevisionRef.current++;
     try {
       await deleteHistoryRecord(record, token);
-      if (token !== (localStorage.getItem(KEY_TOKEN) || '')) return;
+      if (token !== (localStorage.getItem(KEY_SESSION) || '')) return;
       const next = historyRef.current.filter(row => row.id !== id);
       if (record.syncStatus === 'pending') await persistHistoryCache(profile.email, next);
       historyRevisionRef.current++;
@@ -820,38 +919,15 @@ export default function App() {
       setSelectedCase(current => current?.id === id ? null : current);
     } catch (error) {
       if (error instanceof HistoryAuthenticationError) { expireSession(token); return; }
-      if (token === (localStorage.getItem(KEY_TOKEN) || '')) setHistoryError(error instanceof Error ? error.message : 'ลบไม่สำเร็จ รายการยังอยู่ในประวัติ');
+      if (token === (localStorage.getItem(KEY_SESSION) || '')) setHistoryError(error instanceof Error ? error.message : 'ลบไม่สำเร็จ รายการยังอยู่ในประวัติ');
     } finally { recordBusyRef.current = false; setBusyRecord(null); }
-  }
-
-  function exportCsv() {
-    const rows = [
-      ['Date', 'Case ID', 'Image', 'Body Site', 'Estimated Age', 'Calibrated', 'Notes'],
-      ...filteredHistory.map(x => [
-        new Date(x.date).toLocaleString(),
-        x.caseId,
-        x.file,
-        x.bodySite,
-        x.age,
-        x.calibrated ? 'Yes' : 'No',
-        x.notes || ''
-      ])
-    ];
-    const csvContent = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'bruise_analysis_history.csv';
-    a.click();
-    URL.revokeObjectURL(a.href);
   }
 
   const filteredHistory = history.filter(item => {
     const q = searchHistory.toLowerCase();
     const matchQ = !q || [item.caseId, item.file, item.bodySite, item.notes || ''].join(' ').toLowerCase().includes(q);
     const matchAge = !filterAge || item.age === filterAge;
-    const matchCal = !filterCal || (filterCal === 'yes' ? item.calibrated : !item.calibrated);
-    return matchQ && matchAge && matchCal;
+    return matchQ && matchAge;
   });
 
   const calibratedCount = history.filter(h => h.calibrated).length;
@@ -862,149 +938,143 @@ export default function App() {
   }).length;
 
   if (isCheckingSession) {
-    return <div role="status" style={{ padding: 40, textAlign: 'center' }}>กำลังตรวจสอบการเข้าสู่ระบบ...</div>;
+    return <div role="status" style={{ padding: 40, textAlign: 'center' }}>{t("กำลังตรวจสอบการเข้าสู่ระบบ...")}</div>;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && (currentPage === 'login' || currentPage === 'register')) {
     return (
       <section className="login-view">
-        <div className="login-brand">
-          <div className="brandmark">
-            <div className="brand-icon">BC</div>
-            BRUISE COLOR CALIBRATE
-          </div>
-          <div>
-            <div className="badge info" style={{ background: '#dfe9f4', color: '#173454', marginBottom: 18 }}>
-              Clinical Forensic Imaging Workspace
-            </div>
-            <h1>Color calibration and bruise assessment system.</h1>
-            <p>
-              ระบบต้นแบบสำหรับจัดการภาพรอยฟกช้ำ ปรับเทียบสีตามสเกลอ้างอิงอัตโนมัติ
-              แสดง dominant colors, CIEDE2000 ΔE00, RGB histogram และบันทึกประวัติการวิเคราะห์ลง MySQL ผ่าน Prisma
-            </p>
-          </div>
-          <div style={{ color: '#99adc2', fontSize: 13 }}>
-            Senior Project • Clinical Research Workspace • MySQL & Prisma
-          </div>
-        </div>
+        <header className="auth-header">
+          <button type="button" className="auth-brand" onClick={() => setCurrentPage('home')}><span className="brand-icon">BC</span><span>Bruise Color<br />Calibrate</span></button>
+          <div className="auth-actions"><LanguageSwitcher /><button type="button" className="btn secondary" onClick={() => setCurrentPage('home')}><Icon name="home" />{t("Home")}</button></div>
+        </header>
 
         <div className="login-panel">
           <div className="login-box" style={{ maxWidth: 460 }}>
             {/* Tabs for Sign In vs Register */}
-            <div className="auth-tabs">
-              <div
+            <div className="auth-tabs" role="group" aria-label={t("เลือกเข้าสู่ระบบหรือสมัครสมาชิก")}>
+              <button
                 className={`auth-tab ${authMode === 'signin' ? 'active' : ''}`}
-                onClick={() => { setAuthMode('signin'); setLoginError(''); setAuthSuccessMsg(''); }}
-              >
-                Sign In (เข้าสู่ระบบ)
-              </div>
-              <div
+                onClick={() => { setCurrentPage('login'); setLoginError(''); setAuthSuccessMsg(''); }}
+               type="button" aria-pressed={authMode === "signin"}>{t("Sign In (เข้าสู่ระบบ)")}</button>
+              <button
                 className={`auth-tab ${authMode === 'register' ? 'active' : ''}`}
-                onClick={() => { setAuthMode('register'); setLoginError(''); setAuthSuccessMsg(''); }}
-              >
-                Register (สมัครสมาชิก)
-              </div>
+                onClick={() => { setCurrentPage('register'); setLoginError(''); setAuthSuccessMsg(''); }}
+               type="button" aria-pressed={authMode === "register"}>{t("Register (สมัครสมาชิก)")}</button>
             </div>
 
             {authSuccessMsg && (
-              <div style={{ background: '#e8f5e9', color: '#1b5e20', border: '1px solid #c8e6c9', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
-                ✓ {authSuccessMsg}
+              <div style={{ background: '#e8f5e9', color: '#1b5e20', border: '1px solid #c8e6c9', padding: '10px 14px', borderRadius: 8, fontSize: 14, marginBottom: 16 }} role="status" aria-live="polite">
+                <Icon name="check" /> {t(authSuccessMsg)}
               </div>
             )}
 
             {authMode === 'signin' ? (
               <>
-                <h2>Sign in</h2>
-                <div className="sub">เข้าสู่ระบบ Bruise Color Calibrate</div>
-                <form onSubmit={handleLogin}>
+                <h1 className="page-title" id="page-title-login" tabIndex={-1}>{t("Sign in")}</h1>
+                <div className="sub">{t("เข้าสู่ระบบ Bruise Color Calibrate")}</div>
+                <form onSubmit={handleLogin} aria-busy={isSubmittingAuth} aria-describedby={loginError ? "login-error" : undefined}>
                   <div style={{ marginBottom: 16 }}>
-                    <label>Email</label>
+                    <label htmlFor="login-email">{t("Email")}</label>
                     <input
                       type="email"
                       className="input"
                       value={loginEmail}
                       onChange={e => setLoginEmail(e.target.value)}
                       required
-                    />
+                     id="login-email" name="login-email" autoComplete="username" />
                   </div>
                   <div style={{ marginBottom: 20 }}>
-                    <label>Password</label>
-                    <input
-                      type="password"
+                    <label htmlFor="login-password">{t("Password")}</label>
+                    <PasswordInput
                       className="input"
                       value={loginPassword}
                       onChange={e => setLoginPassword(e.target.value)}
                       required
-                    />
+                     key="login-password" id="login-password" name="login-password" autoComplete="current-password" />
                   </div>
                   <button type="submit" className="btn primary" style={{ width: '100%' }} disabled={isSubmittingAuth}>
-                    {isSubmittingAuth ? 'กำลังเข้าสู่ระบบ...' : 'Sign in'}
+                    {isSubmittingAuth ? t("กำลังเข้าสู่ระบบ...") : t("Sign in")}
                   </button>
                 </form>
                 {loginError && (
-                  <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 13, fontWeight: 600 }}>
-                    {loginError}
+                  <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14, fontWeight: 600 }} role="alert" id="login-error">
+                    {t(loginError)}
                   </div>
                 )}
               </>
             ) : (
               <>
-                <h2>Create Account</h2>
-                <div className="sub">สร้างบัญชีผู้ใช้งาน</div>
-                <form onSubmit={handleRegister}>
+                <h1 className="page-title" id="page-title-register" tabIndex={-1}>{t("Create Account")}</h1>
+
+                <form className="registration-form" onSubmit={handleRegister} aria-busy={isSubmittingAuth} aria-describedby={loginError ? "register-error" : undefined}>
                   <div style={{ marginBottom: 12 }}>
-                    <label>ชื่อ - นามสกุล (Full Name)</label>
+                    <label htmlFor="register-name">{t("ชื่อ - นามสกุล (Full Name)")}</label>
                     <input
                       className="input"
-                      placeholder="เช่น นพ. ธนภัทร รุ่งเรือง"
+                      placeholder={t("เช่น นพ. ธนภัทร รุ่งเรือง")}
                       value={regName}
                       onChange={e => setRegName(e.target.value)}
                       required
-                    />
+                     id="register-name" name="register-name" autoComplete="name" />
                   </div>
 
                   <div style={{ marginBottom: 12 }}>
-                    <label>อีเมล (Email)</label>
+                    <label htmlFor="register-email">{t("อีเมล (Gmail เท่านั้น)")}</label>
                     <input
                       type="email"
                       className="input"
-                      placeholder="doctor@hospital.or.th"
+                      placeholder="yourname@gmail.com"
                       value={regEmail}
                       onChange={e => setRegEmail(e.target.value)}
                       required
-                    />
+                     id="register-email" name="register-email" autoComplete="email"
+                     aria-describedby="register-email-hint" pattern={"[^\\s@]+@[gG][mM][aA][iI][lL]\\.[cC][oO][mM]"} />
+                    <p id="register-email-hint" className="registration-email-hint">{t("ใช้ที่อยู่อีเมลที่ลงท้ายด้วย @gmail.com เท่านั้น")}</p>
                   </div>
                   <div className="grid g2" style={{ gap: 10, marginBottom: 18 }}>
                     <div>
-                      <label>รหัสผ่าน (Password)</label>
-                      <input
-                        type="password"
+                      <label htmlFor="register-password">{t("รหัสผ่าน (Password)")}</label>
+                      <PasswordInput
                         className="input"
-                        placeholder="อย่างน้อย 4 ตัวอักษร"
+                        placeholder={t("อย่างน้อย 15 ตัวอักษร")}
                         value={regPassword}
-                        onChange={e => setRegPassword(e.target.value)}
+                        onChange={e => { e.currentTarget.setCustomValidity(''); setRegPassword(e.target.value); }}
+                        pattern={"[\\x20-\\x7E]+"}
+                        onInvalid={e => { if (e.currentTarget.validity.patternMismatch) e.currentTarget.setCustomValidity("Use only English letters (A-Z, a-z), numbers, symbols, and spaces."); }}
                         required
-                      />
+                       key="register-password" id="register-password" aria-describedby="register-password-policy" name="register-password" autoComplete="new-password" minLength={15} />
                     </div>
                     <div>
-                      <label>ยืนยันรหัสผ่าน</label>
-                      <input
-                        type="password"
+                      <label htmlFor="register-password-confirm">{t("ยืนยันรหัสผ่าน")}</label>
+                      <PasswordInput
                         className="input"
-                        placeholder="ยืนยันรหัสผ่านอีกครั้ง"
+                        placeholder={t("ยืนยันรหัสผ่านอีกครั้ง")}
                         value={regConfirmPassword}
-                        onChange={e => setRegConfirmPassword(e.target.value)}
+                        onChange={e => { e.currentTarget.setCustomValidity(''); setRegConfirmPassword(e.target.value); }}
+                        pattern={"[\\x20-\\x7E]+"}
+                        onInvalid={e => { if (e.currentTarget.validity.patternMismatch) e.currentTarget.setCustomValidity("Use only English letters (A-Z, a-z), numbers, symbols, and spaces."); }}
                         required
-                      />
+                       key="register-password-confirm" id="register-password-confirm" aria-describedby="register-password-policy" name="register-password-confirm" autoComplete="new-password" minLength={15} />
                     </div>
                   </div>
+                  <div className="password-policy">
+                    <p className="password-policy-name">{t("Bruise Color Calibrate Password Policy")}</p>
+                    <ul id="register-password-policy">
+                      <li>{t("Use ")}<strong>{t("15-128 characters")}</strong>.</li>
+                      <li>{t("Use only English letters (A-Z, a-z), numbers, symbols, and spaces.")}</li>
+                      <li>{t("Uppercase letters, numbers, and symbols are not mandatory.")}</li>
+                      <li>{t("Confirm your password exactly and use a unique password for this system.")}</li>
+                      <li>{t("Passwords found in known data breaches are not accepted.")}</li>
+                    </ul>
+                  </div>
                   <button type="submit" className="btn teal" style={{ width: '100%' }} disabled={isSubmittingAuth}>
-                    {isSubmittingAuth ? 'กำลังสร้างบัญชี...' : 'Register Account (MySQL)'}
+                    {isSubmittingAuth ? t("กำลังสร้างบัญชี...") : t("Register Account (MySQL)")}
                   </button>
                 </form>
                 {loginError && (
-                  <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 13, fontWeight: 600 }}>
-                    {loginError}
+                  <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14, fontWeight: 600 }} role="alert" id="register-error">
+                    {t(loginError)}
                   </div>
                 )}
               </>
@@ -1017,62 +1087,32 @@ export default function App() {
 
   return (
     <div className="app-view">
-      <aside className="sidebar">
-        <div className="sidebrand">
-          <div className="brand-icon">BC</div>
-          <div>
-            Bruise Color<br />
-            <span style={{ fontWeight: 500, color: '#aec0d3' }}>Calibrate</span>
-          </div>
-        </div>
-
-        <nav className="navitems">
-          <div
-            className={`navitem ${currentPage === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('dashboard')}
-          >
-            <span className="navdot" />
-            Dashboard
-          </div>
-          <div
-            className={`navitem ${currentPage === 'analysis' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('analysis')}
-          >
-            <span className="navdot" />
-            New Analysis
-          </div>
-          <div
-            className={`navitem ${currentPage === 'history' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('history')}
-          >
-            <span className="navdot" />
-            Analysis History
-          </div>
-        </nav>
-
-        <div className="sidefoot">
-          <b>Prototype v0.1</b>
-          <br />
-          For research and clinical workflow demonstration only.
-        </div>
-      </aside>
+      <a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>{t("ข้ามไปเนื้อหา")}</a>
+      <NavigationDrawer open={menuOpen} page={currentPage} authenticated={isAuthenticated} onClose={() => setMenuOpen(false)} onNavigate={setCurrentPage} />
 
       <div className="main">
-        <header className="topbar">
-          <div className="top-title">
-            {currentPage === 'dashboard' && 'Dashboard'}
-            {currentPage === 'analysis' && 'New Analysis'}
-            {currentPage === 'history' && 'Analysis History'}
-            {currentPage === 'profile' && 'User Profile'}
+        <header className={"topbar" + (!isAuthenticated ? " public-topbar" : "")}>
+          <div className="topbar-start">
+            <button type="button" id="navigation-toggle" className="btn secondary menu-toggle" aria-label={t("เปิดเมนูหลัก")} aria-haspopup="dialog"
+              aria-expanded={menuOpen} aria-controls="primary-navigation" onClick={() => setMenuOpen(true)}><Icon name="menu" /></button>
+            <div className="top-title">
+              <span className="site-name">Bruise Color Calibrate</span>
+              {currentPage === 'home' && t("Home")}
+              {currentPage === 'dashboard' && t("Dashboard")}
+              {currentPage === 'analysis' && t("New Analysis")}
+              {currentPage === 'history' && t("Analysis History")}
+              {currentPage === 'profile' && t("User Profile")}
+            </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div
+          <div className="topbar-actions">
+            <LanguageSwitcher />
+            {isAuthenticated && <div
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
-                fontSize: 12,
+                fontSize: 14,
                 fontWeight: 600,
                 padding: '4px 10px',
                 borderRadius: 14,
@@ -1080,7 +1120,7 @@ export default function App() {
                 color: dbStatus === 'connected' ? '#2e7d32' : '#c62828',
                 border: `1px solid ${dbStatus === 'connected' ? '#a5d6a7' : '#ef9a9a'}`
               }}
-              title={dbStatus === 'connected' ? 'MySQL Database is online via Prisma' : 'MySQL Database is unreachable'}
+              title={dbStatus === 'connected' ? t("MySQL Database is online via Prisma") : t("MySQL Database is unreachable")}
             >
               <span
                 style={{
@@ -1090,34 +1130,21 @@ export default function App() {
                   backgroundColor: dbStatus === 'connected' ? '#2e7d32' : '#c62828'
                 }}
               />
-              {dbStatus === 'connected' ? 'MySQL (Prisma): Connected' : 'MySQL: Offline'}
-            </div>
+              {dbStatus === 'connected' ? t("MySQL (Prisma): Connected") : t("MySQL: Offline")}
+            </div>}
 
-            <div className="userchip">
-              <div
-                className={`profile-trigger ${currentPage === 'profile' ? 'active' : ''}`}
-                onClick={() => setCurrentPage('profile')}
-                title="คลิกเพื่อดูและจัดการโปรไฟล์ (User Profile)"
-              >
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: currentPage === 'profile' ? 'var(--teal)' : 'var(--navy)' }}>
-                    {profile.name}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{profile.email}</div>
-                </div>
-                <div className={`avatar ${currentPage === 'profile' ? 'active' : ''}`}>
-                  {getInitials(profile.name)}
-                </div>
-              </div>
-              <button className="btn ghost" onClick={handleLogout} style={{ padding: '6px 12px', fontSize: 13 }} title="ออกจากระบบ">
-                Logout
-              </button>
-            </div>
+            {isAuthenticated ? (<div className="userchip">
+              <button type="button" className={"profile-trigger "+(currentPage === "profile" ? "active" : "")} onClick={() => setCurrentPage("profile")} aria-label={t("เปิดโปรไฟล์")} aria-pressed={currentPage === "profile"}><span className="profile-meta"><strong>{profile.name}</strong><span>{profile.email}</span></span><span className={"avatar "+(currentPage === "profile" ? "active" : "")} aria-hidden="true">{getInitials(profile.name)}</span></button>
+              <button className="btn ghost" disabled={isLoggingOut} onClick={handleLogout} style={{ padding: '6px 12px', fontSize: 14 }} title={t("ออกจากระบบ")}>{t("Logout")}</button>
+            </div>) : (
+              <div className="guest-actions"><button type="button" className="btn secondary" onClick={() => setCurrentPage('login')}>{t("Sign In")}</button><button type="button" className="btn primary" onClick={() => setCurrentPage('register')}>{t("Register")}</button></div>
+            )}
           </div>
         </header>
 
-        <main className="page">
-          {historyError && <div className="callout warn" role="alert" style={{ marginBottom: 16 }}>{historyError}</div>}
+        <main className="page" id="main-content" tabIndex={-1}>
+          {logoutError && <div className="callout warn" role="alert">{t(logoutError)}</div>}
+          {historyError && <div className="callout warn" role="alert" style={{ marginBottom: 16 }}>{t(historyError)}</div>}
           {saveToast && (
             <div
               style={{
@@ -1134,52 +1161,52 @@ export default function App() {
                 fontSize: 14,
                 boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
               }}
-            >
-              <span>✓</span> {saveToast}
+             role="status" aria-live="polite">
+              <Icon name="check" /> {t(saveToast)}
             </div>
           )}
+          {(!isAuthenticated || currentPage === 'home') && <Home authenticated={isAuthenticated} onNavigate={setCurrentPage} />}
+          {isAuthenticated && <>
           {/* DASHBOARD PAGE */}
-          <section style={{ display: currentPage === 'dashboard' ? 'block' : 'none' }}>
-            <h1 className="page-title">Dashboard</h1>
-            <div className="page-sub">ภาพรวมการวิเคราะห์และการปรับเทียบสีรอยฟกช้ำ</div>
+          <section style={{ display: isAuthenticated && currentPage === 'dashboard' ? 'block' : 'none' }}>
+            <h1 className="page-title" id="page-title-dashboard" tabIndex={-1}>{t("Dashboard")}</h1>
+            <div className="page-sub">{t("ภาพรวมการวิเคราะห์และการปรับเทียบสีรอยฟกช้ำ")}</div>
 
             <div className="grid g4">
               <div className="card kpi">
-                <div className="t">Total analyses</div>
-                <div className="v">{history.length}</div>
-                <div className="small">Records in your account</div>
+                <div className="t">{t("Total analyses")}</div>
+                <div className="v">{isLoadingHistory && !history.length ? '?' : history.length}</div>
+                <div className="small">{t("Records in your account")}</div>
               </div>
               <div className="card kpi">
-                <div className="t">Calibrated images</div>
-                <div className="v">{calibratedCount}</div>
-                <div className="small">with reference scale</div>
+                <div className="t">{t("Calibrated images")}</div>
+                <div className="v">{isLoadingHistory && !history.length ? '?' : calibratedCount}</div>
+                <div className="small">{t("with reference scale")}</div>
               </div>
               <div className="card kpi">
-                <div className="t">This month</div>
-                <div className="v">{currentMonthCount}</div>
-                <div className="small">new analyses logged</div>
+                <div className="t">{t("This month")}</div>
+                <div className="v">{isLoadingHistory && !history.length ? '?' : currentMonthCount}</div>
+                <div className="small">{t("new analyses logged")}</div>
               </div>
               <div className="card kpi">
-                <div className="t">Last assessment</div>
-                <div className="v" style={{ fontSize: 20 }}>{history[0]?.age || '—'}</div>
-                <div className="small">estimated day band</div>
+                <div className="t">{t("Last assessment")}</div>
+                <div className="v" style={{ fontSize: 20 }}>{t(AGE_UNAVAILABLE)}</div>
+                <div className="small">{t("estimated day band")}</div>
               </div>
             </div>
 
             <div className="grid g2" style={{ marginTop: 20 }}>
               <div className="card">
                 <div className="card-h">
-                  <b>Recent analyses</b>
-                  <button className="btn secondary" onClick={() => setCurrentPage('history')} style={{ padding: '6px 12px', fontSize: 12 }}>
-                    View all
-                  </button>
+                  <h2 className="section-title">{t("Recent analyses")}</h2>
+                  <button className="btn secondary" onClick={() => setCurrentPage('history')} style={{ padding: '6px 12px', fontSize: 14 }}>{t("View all")}</button>
                 </div>
                 <div className="card-b">
                   {history.length === 0 ? (
-                    <div style={{ color: 'var(--muted)' }}>No analyses yet.</div>
+                    <div className="empty-state"><p>{isLoadingHistory ? t("กำลังโหลดประวัติ...") : t("ยังไม่มีรายการวิเคราะห์ เริ่มจากเลือกภาพแรกของคุณ")}</p>{!isLoadingHistory && <button className="btn secondary" onClick={() => setCurrentPage('analysis')}>{t("เริ่มวิเคราะห์ภาพ")}</button>}</div>
                   ) : (
                     history.slice(0, 5).map(item => (
-                      <div
+                      <button
                         key={item.id}
                         onClick={() => setSelectedCase(item)}
                         style={{
@@ -1190,28 +1217,27 @@ export default function App() {
                           borderBottom: '1px solid #edf0f2',
                           cursor: 'pointer'
                         }}
-                        title="คลิกเพื่อดูผลการตรวจละเอียด"
-                      >
+                        title={t("คลิกเพื่อดูผลการตรวจละเอียด")}
+                       type="button" className="recent-analysis" aria-label={t("ดูผลวิเคราะห์ ")+item.caseId}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           {item.thumbnail ? (
-                            <img src={item.thumbnail} alt={item.caseId} className="tbl-thumb" style={{ width: 44, height: 44 }} />
+                            <img src={item.thumbnail} alt={item.caseId} className="tbl-thumb" style={{ width: 44, height: 44 }}  loading="lazy" decoding="async" />
                           ) : (
-                            <div className="tbl-thumb-empty" style={{ width: 44, height: 44, fontSize: 10 }}>No img</div>
+                            <div className="tbl-thumb-empty" style={{ width: 44, height: 44, fontSize: 14 }}><Icon name="image" /></div>
                           )}
                           <div>
                             <b style={{ color: 'var(--navy)' }}>{item.caseId}</b>
-                            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                              {item.file} • {item.bodySite}
+                            <div style={{ fontSize: 14, color: 'var(--muted)' }}>
+                              {item.file} • {t(item.bodySite)}
                             </div>
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <span className="badge info">{item.age}</span>
-                          <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 600, marginTop: 4 }}>
-                            Inspect 🔍
+                          <span className="badge info">{t(AGE_UNAVAILABLE)}</span>
+                          <div style={{ fontSize: 14, color: 'var(--teal)', fontWeight: 600, marginTop: 4 }}>{t("Inspect ")}<Icon name="search" />
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -1219,21 +1245,17 @@ export default function App() {
 
               <div className="card">
                 <div className="card-h">
-                  <b>Clinical Workflow</b>
-                  <span className="badge ok">Ready</span>
+                  <h2 className="section-title">{t("Clinical Workflow")}</h2>
+                  <span className="badge ok">{t("Ready")}</span>
                 </div>
                 <div className="card-b">
                   <div className="callout">
-                    <b>1. Upload photo → 2. Auto detect card → 3. Calibrate → 4. Segment bruise → 5. Measure & Review</b>
+                    <b>{t("1. Upload photo → 2. Auto detect card → 3. Calibrate → 4. Segment bruise → 5. Measure & Review")}</b>
                     <br />
-                    <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, display: 'block' }}>
-                      การ์ดสเกลสีอ้างอิงในสภาพแสงเดียวกันจะช่วยปรับแก้ความคลาดสี (CCM) ทำให้การวัดค่าสีมีความน่าเชื่อถือและทำซ้ำได้
-                    </span>
+                    <span style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4, display: 'block' }}>{t("การ์ดสเกลสีอ้างอิงในสภาพแสงเดียวกันจะช่วยปรับแก้ความคลาดสี (CCM) ทำให้การวัดค่าสีมีความน่าเชื่อถือและทำซ้ำได้")}</span>
                   </div>
                   <div style={{ marginTop: 20 }}>
-                    <button className="btn primary" onClick={() => setCurrentPage('analysis')}>
-                      Start new analysis
-                    </button>
+                    <button className="btn primary" onClick={() => setCurrentPage('analysis')}>{t("Start new analysis")}</button>
                   </div>
                 </div>
               </div>
@@ -1241,24 +1263,24 @@ export default function App() {
           </section>
 
           {/* NEW ANALYSIS PAGE */}
-          <section style={{ display: currentPage === 'analysis' ? 'block' : 'none' }}>
-            <h1 className="page-title">New Analysis</h1>
-            <div className="page-sub">อัปโหลดภาพ ตรวจจับการ์ด ปรับเทียบสี และวิเคราะห์รอยฟกช้ำ</div>
+          <section style={{ display: isAuthenticated && currentPage === 'analysis' ? 'block' : 'none' }}>
+            <h1 className="page-title" id="page-title-analysis" tabIndex={-1}>{t("New Analysis")}</h1>
+            <div className="page-sub">{t("อัปโหลดภาพ ตรวจจับการ์ด ปรับเทียบสี และวิเคราะห์รอยฟกช้ำ")}</div>
 
             <div className="grid g2">
               {/* 1. Image acquisition */}
               <div className="card">
                 <div className="card-h">
-                  <b>1. Image acquisition</b>
+                  <h2 className="section-title">{t("1. Image acquisition")}</h2>
                   <span className={`badge ${file ? 'ok' : 'info'}`}>
-                    {file ? 'Image loaded' : 'No image'}
+                    {file ? t("Image loaded") : t("No image")}
                   </span>
                 </div>
                 <div className="card-b">
                   {!file ? (
                     <div
                       className={`upload-zone ${isDragOver ? 'drag' : ''}`}
-                      onClick={() => document.getElementById('imageFileInput')?.click()}
+
                       onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
                       onDragLeave={() => setIsDragOver(false)}
                       onDrop={e => {
@@ -1268,22 +1290,18 @@ export default function App() {
                         if (f) loadFile(f);
                       }}
                     >
-                      <div className="upload-icon">↑</div>
-                      <b style={{ fontSize: 17, color: 'var(--navy)' }}>Drop clinical photo here or click to browse</b>
-                      <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 8, maxWidth: 380 }}>
-                        วางไฟล์ภาพรอยฟกช้ำที่มีการ์ดสเกลสีอ้างอิง (Color Reference Card) เพื่อเริ่มการปรับเทียบสีอัตโนมัติ
-                      </div>
+                      <div className="upload-icon"><Icon name="upload" /></div>
+                      <b style={{ fontSize: 17, color: 'var(--navy)' }}>{t("Drop clinical photo here or click to browse")}</b>
+                      <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 8, maxWidth: 380 }}>{t("วางไฟล์ภาพรอยฟกช้ำที่มีการ์ดสเกลสีอ้างอิง (Color Reference Card) เพื่อเริ่มการปรับเทียบสีอัตโนมัติ")}</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
                         <span className="badge info">JPG / PNG / WebP</span>
                         <span className="badge info">HEIC / HEIF</span>
-                        <span className="badge info">Max 25MB</span>
+                        <span className="badge info">{t("Max 25MB")}</span>
                       </div>
-                      <div
+                      <button
                         className="btn primary"
                         style={{ marginTop: 22, padding: '10px 22px', fontSize: 14 }}
-                      >
-                        Select Image File
-                      </div>
+                       type="button" onClick={() => document.getElementById("imageFileInput")?.click()}>{t("Select Image File")}</button>
                     </div>
                   ) : (
                     <>
@@ -1298,7 +1316,7 @@ export default function App() {
                           borderRadius: 10,
                           marginBottom: 14
                         }}
-                      >
+                       className="file-summary">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
                           <div
                             style={{
@@ -1313,57 +1331,52 @@ export default function App() {
                               flexShrink: 0
                             }}
                           >
-                            📷
+                            <Icon name="image" />
                           </div>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {file.name}
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                              {(file.size / (1024 * 1024)).toFixed(2)} MB • โหลดภาพเรียบร้อย
-                            </div>
+                            <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 2 }}>
+                              {(file.size / (1024 * 1024)).toFixed(2)}{t(" MB • โหลดภาพเรียบร้อย")}</div>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }} className="file-actions">
                           <button
                             type="button"
                             className="btn secondary"
-                            style={{ padding: '6px 12px', fontSize: 12 }}
+                            style={{ padding: '6px 12px', fontSize: 14 }}
                             onClick={() => document.getElementById('imageFileInput')?.click()}
-                            title="เลือกภาพอื่นแทนภาพนี้"
-                          >
-                            เปลี่ยนภาพ
-                          </button>
+                            title={t("เลือกภาพอื่นแทนภาพนี้")}
+                          >{t("เปลี่ยนภาพ")}</button>
                           <button
                             type="button"
                             className="btn secondary"
-                            style={{ padding: '6px 12px', fontSize: 12, color: 'var(--danger)', borderColor: '#feb2b2' }}
+                            style={{ padding: '6px 12px', fontSize: 14, color: 'var(--danger)', borderColor: '#feb2b2' }}
                             onClick={removeImage}
-                            title="ลบภาพนี้ออกเพื่ออัปโหลดใหม่"
+                            title={t("ลบภาพนี้ออกเพื่ออัปโหลดใหม่")}
                           >
-                            🗑️ ลบภาพออก
-                          </button>
+                            <Icon name="trash" />{t(" ลบภาพออก")}</button>
                         </div>
                       </div>
 
                       <div className="preview-wrap">
+                      {previewStatus !== 'ready' && <p className="preview-message" role="status">{previewStatus === 'loading' ? t("กำลังโหลดภาพตัวอย่าง...") : t(previewMessage) || t("ยังไม่มีภาพตัวอย่าง")}</p>}
+
                         <canvas
                           ref={canvasRef}
                           id="imageCanvas"
                           onClick={handleCanvasClick}
-                          style={{ display: 'block' }}
-                        />
+                          style={{ display: previewStatus === "ready" ? "block" : "none" }}
+                         tabIndex={0} role="button" aria-label={t("ตรวจค่าสี RGB ในภาพ")} aria-describedby="reference-pixel-help" onKeyDown={handleCanvasKeyDown}/>
                         {refPixel && (
-                          <div className="ref-pill">
-                            Reference pixel: <b>RGB {refPixel.join(' / ')}</b>
+                          <div className="ref-pill" role="status">{t("Reference pixel: ")}<b>RGB {refPixel.join(' / ')}</b>
                           </div>
                         )}
                       </div>
 
-                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
-                        Tip: สามารถคลิกบนบริเวณสีขาวหรือเทากลางบนการ์ดในภาพเพื่อเลือก reference pixel สำหรับ neutral calibration ได้
-                      </div>
+                                            <p id="reference-pixel-help" className="small" style={{ marginTop: 10 }}>{t("คลิกภาพหรือใช้ Tab โฟกัสภาพ แล้วกด Enter เพื่อตรวจค่า RGB ใช้ปุ่มลูกศรเลื่อนทีละพิกเซล หรือ Shift + ลูกศรเลื่อนทีละ 10 พิกเซล")}</p>
                     </>
                   )}
 
@@ -1383,14 +1396,14 @@ export default function App() {
               {/* 2. Case Parameters & Submission */}
               <div className="card">
                 <div className="card-h">
-                  <b>2. Case parameters & notes</b>
+                  <h2 className="section-title">{t("2. Case parameters & notes")}</h2>
                   <span className={`badge ${analysisResult?.calibration.is_calibrated ? 'ok' : 'warn'}`}>
-                    {analysisResult?.calibration.is_calibrated ? 'Calibrated' : 'Pending analysis'}
+                    {analysisResult?.calibration.is_calibrated ? t("Calibrated") : t("Pending analysis")}
                   </span>
                 </div>
                 <div className="card-b">
                   <div style={{ marginBottom: 14 }}>
-                    <label>Case / Subject ID</label>
+                    <label htmlFor="caseId">{t("Case / Subject ID")}</label>
                     <input
                       className="input"
                       id="caseId"
@@ -1398,47 +1411,49 @@ export default function App() {
                       value={caseId}
                       onChange={e => { caseIdEditedRef.current = true; setCaseId(e.target.value); }}
                       disabled={isSavingDb}
-                    />
+                     name="caseId" autoComplete="off" />
                   </div>
 
                   <div style={{ marginBottom: 14 }}>
-                    <label>Body site</label>
+                    <label htmlFor="body-site">{t("Body site")}</label>
                     <select
                       className="input"
                       value={bodySite}
                       onChange={e => setBodySite(e.target.value)}
-                    >
-                      <option value="">Select body site</option>
-                      <option value="Arm">Arm (แขน)</option>
-                      <option value="Leg">Leg (ขา)</option>
-                      <option value="Torso">Torso (ลำตัว/หน้าอก)</option>
-                      <option value="Face">Face (ใบหน้า)</option>
-                      <option value="Other">Other (อื่นๆ)</option>
+                     id="body-site" name="body-site">
+                      <option value="">{t("Select body site")}</option>
+                      <option value="Arm">{t("Arm (แขน)")}</option>
+                      <option value="Leg">{t("Leg (ขา)")}</option>
+                      <option value="Torso">{t("Torso (ลำตัว/หน้าอก)")}</option>
+                      <option value="Face">{t("Face (ใบหน้า)")}</option>
+                      <option value="Other">{t("Other (อื่นๆ)")}</option>
                     </select>
                   </div>
 
                   <div style={{ marginBottom: 18 }}>
-                    <label>Notes</label>
+                    <label htmlFor="analysis-notes">{t("Notes")}</label>
                     <input
                       className="input"
-                      placeholder="Optional clinical / lighting notes"
+                      placeholder={t("Optional clinical / lighting notes")}
                       value={notes}
                       onChange={e => setNotes(e.target.value)}
-                    />
+                     id="analysis-notes" name="analysis-notes" autoComplete="off" />
                   </div>
 
                   <button
                     className="btn primary"
                     style={{ width: '100%', padding: '14px' }}
                     disabled={!file || isAnalyzing}
-                    onClick={runAnalysis}
+                    id="analysis-submit" onClick={runAnalysis}
                   >
-                    {isAnalyzing ? 'Running pipeline analysis...' : 'Analyze Photo & Bruise'}
+                    {isAnalyzing ? t("Running pipeline analysis...") : t("Analyze Photo & Bruise")}
                   </button>
 
+                  {isAnalyzing && <p role="status" className="small" style={{ marginTop: 12 }}>{t("กำลังวิเคราะห์ภาพ กรุณารอ คุณไม่ต้องอัปโหลดภาพซ้ำ")}</p>}
                   {analysisError && (
-                    <div style={{ color: 'var(--danger)', marginTop: 12, fontSize: 13 }}>
-                      {analysisError}
+                    <div className="analysis-error" style={{ color: 'var(--danger)', marginTop: 12, fontSize: 14 }} role="alert" id="analysis-error">
+                      <p className="analysis-error-message">{t(analysisError)}</p>
+                    {file && <button type="button" className="btn secondary" onClick={runAnalysis} disabled={isAnalyzing}>{t("ลองวิเคราะห์อีกครั้ง")}</button>}
                     </div>
                   )}
                 </div>
@@ -1452,23 +1467,23 @@ export default function App() {
                   {/* Color Profile */}
                   <div className="card">
                     <div className="card-h">
-                      <b>Color Profile</b>
-                      <span className="badge ok">Analysis complete</span>
+                      <h2 className="section-title">{t("Color Profile")}</h2>
+                      <span className="badge ok">{t("Analysis complete")}</span>
                     </div>
                     <div className="card-b">
                       <div className="grid g2">
                         <div className="metric">
-                          <div className="label">Mean RGB</div>
+                          <div className="label">{t("Mean RGB")}</div>
                           <div className="value">{analysisResult.color_profile.mean_rgb.join(', ')}</div>
                         </div>
                         <div className="metric">
-                          <div className="label">Mean Lightness</div>
+                          <div className="label">{t("Mean Lightness")}</div>
                           <div className="value">{analysisResult.color_profile.mean_lightness}%</div>
                         </div>
                       </div>
 
                       <div style={{ marginTop: 20 }}>
-                        <label>Dominant Colors (เทียบกับสเกล CIEDE2000)</label>
+                        <h3 className="field-heading">{t("Dominant Colors (เทียบกับสเกล CIEDE2000)")}</h3>
                         <div className="palette" style={{ marginTop: 10 }}>
                           {analysisResult.color_profile.dominant_colors.map((c, i) => (
                             <div key={i} className="swatch">
@@ -1476,10 +1491,9 @@ export default function App() {
                               <div className="swatch-txt">
                                 <b>{c.hex}</b>
                                 <br />
-                                {c.name}
+                                {t(c.name)}
                                 <br />
-                                {c.percent}% sampled
-                              </div>
+                                {c.percent}{t("% sampled")}</div>
                             </div>
                           ))}
                         </div>
@@ -1487,40 +1501,11 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Age Assessment */}
+                  {/* Age estimation is not enabled yet. */}
                   <div className="card">
-                    <div className="card-h">
-                      <b>Bruise Assessment</b>
-                      <span className="badge warn">Experimental Heuristic</span>
-                    </div>
+                    <div className="card-h"><h2 className="section-title">{t("Estimated Age Range")}</h2></div>
                     <div className="card-b">
-                      <div className="grid g2">
-                        <div className="metric">
-                          <div className="label">Estimated Day Range</div>
-                          <div className="value" style={{ color: 'var(--teal)' }}>
-                            {analysisResult.age_estimate.range || 'N/A (No bruise)'}
-                          </div>
-                        </div>
-                        <div className="metric">
-                          <div className="label">Confidence Level</div>
-                          <div className="value" style={{ fontSize: 16 }}>
-                            {analysisResult.age_estimate.confidence} ({analysisResult.age_estimate.confidence_score}/100)
-                          </div>
-                        </div>
-                      </div>
-
-
-                      <div className="callout" style={{ marginTop: 14 }}>
-                        <b>{analysisResult.age_estimate.reason || 'Normal skin / no significant wound proposal'}</b>
-                        <br />
-                        <span style={{ fontSize: 12 }}>{analysisResult.age_estimate.note}</span>
-                      </div>
-
-                      <div className="disclaimer" style={{ marginTop: 14 }}>
-                        <b>Important Medical Notice:</b> การประเมินช่วงวันเป็น Heuristic สำหรับ prototype เท่านั้น
-                        ไม่สามารถใช้เป็นหลักฐานยืนยันอายุแผลทางนิติวิทยาศาสตร์ได้
-                        เนื่องจากสีของรอยฟกช้ำขึ้นกับความลึก สภาพผิว และการฟื้นตัวของร่างกายแต่ละบุคคล
-                      </div>
+                      <div className="value" style={{ color: 'var(--teal)', fontSize: 20, fontWeight: 700 }}>{t(AGE_UNAVAILABLE)}</div>
                     </div>
                   </div>
                 </div>
@@ -1530,8 +1515,8 @@ export default function App() {
                   {/* Visual Composite Overlays */}
                   <div className="card">
                     <div className="card-h">
-                      <b>Visual Composite & Mask Overlay</b>
-                      <span className="small">Green: Skin | Red: Bruise Mask</span>
+                      <h2 className="section-title">{t("Visual Composite & Mask Overlay")}</h2>
+                      <span className="small">{t("Green: Skin | Red: Bruise Mask")}</span>
                     </div>
                     <div className="card-b" style={{ textAlign: 'center' }}>
                       {analysisResult.previews?.overlay ? (
@@ -1539,15 +1524,15 @@ export default function App() {
                           src={analysisResult.previews.overlay}
                           alt="Wound and Skin Overlay"
                           style={{ maxWidth: '100%', maxHeight: 380, borderRadius: 8, border: '1px solid var(--line)' }}
-                        />
+                         loading="lazy" decoding="async" />
                       ) : analysisResult.previews?.calibrated ? (
                         <img
                           src={analysisResult.previews.calibrated}
                           alt="Calibrated Preview"
                           style={{ maxWidth: '100%', maxHeight: 380, borderRadius: 8, border: '1px solid var(--line)' }}
-                        />
+                         loading="lazy" decoding="async" />
                       ) : (
-                        <div style={{ color: 'var(--muted)', padding: 40 }}>Overlay preview rendered on canvas</div>
+                        <div style={{ color: 'var(--muted)', padding: 40 }}>{t("ผลลัพธ์นี้ไม่มีภาพ Overlay ให้แสดง")}</div>
                       )}
                     </div>
                   </div>
@@ -1556,16 +1541,14 @@ export default function App() {
 
                 <AnalysisDetails result={analysisResult} />
 
-                <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                  <button className="btn secondary" onClick={clearAnalysisForm}>
-                    Clear
-                  </button>
+                <div className="result-actions">
+                  <button className="btn secondary" onClick={clearAnalysisForm}>{t("Clear")}</button>
                   <button
                     className="btn primary"
                     onClick={saveAnalysisToHistory}
                     disabled={isSavingDb}
                   >
-                    {isSavingDb ? 'Saving to MySQL...' : 'Save to Clinical History (MySQL)'}
+                    {isSavingDb ? t("Saving to MySQL...") : t("Save to Clinical History (MySQL)")}
                   </button>
                 </div>
               </div>
@@ -1573,21 +1556,20 @@ export default function App() {
           </section>
 
           {/* HISTORY PAGE */}
-          <section style={{ display: currentPage === 'history' ? 'block' : 'none' }}>
+          <section style={{ display: isAuthenticated && currentPage === 'history' ? 'block' : 'none' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
               <div>
-                <h1 className="page-title" style={{ marginBottom: 4 }}>Analysis History</h1>
-                <div className="page-sub" style={{ margin: 0 }}>
-                  ประวัติการวิเคราะห์ส่วนบุคคล (บันทึกแยกเฉพาะบัญชี: <b>{profile.email}</b>)
+                <h1 className="page-title" style={{ marginBottom: 4 }} id="page-title-history" tabIndex={-1}>{t("Analysis History")}</h1>
+                <div className="page-sub" style={{ margin: 0 }}>{t("ประวัติการวิเคราะห์ส่วนบุคคล (บันทึกแยกเฉพาะบัญชี: ")}<b>{profile.email}</b>)
                 </div>
               </div>
               <button
                 className="btn secondary"
                 onClick={() => refreshFromDatabase(profile.email)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}
-                title="ซิงค์ดึงประวัติล่าสุดของบัญชีคุณจาก MySQL (ระบบรีเฟรชอัตโนมัติทุก 20 วินาที)"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14 }}
+                title={t("ซิงค์ดึงประวัติล่าสุดของบัญชีคุณจาก MySQL (ระบบรีเฟรชอัตโนมัติทุก 20 วินาที)")}
               >
-                🔄 ซิงค์ข้อมูลบัญชีนี้ <span style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 600 }}>(Auto 20s)</span>
+                <Icon name="refresh" />{t(" ซิงค์ข้อมูลบัญชีนี้ ")}<span style={{ fontSize: 14, color: 'var(--teal)', fontWeight: 600 }}>{t("(Auto 20s)")}</span>
               </button>
             </div>
 
@@ -1596,129 +1578,95 @@ export default function App() {
                 <div className="filters">
                   <input
                     className="input"
-                    placeholder="Search case ID, file name, body site, notes..."
+                    placeholder={t("Search case ID, file name, body site, notes...")}
                     value={searchHistory}
                     onChange={e => setSearchHistory(e.target.value)}
-                  />
+                   id="history-search" name="history-search" autoComplete="off" aria-label={t("ค้นหาประวัติ")} />
                   <select
                     className="input"
                     value={filterAge}
                     onChange={e => setFilterAge(e.target.value)}
-                  >
-                    <option value="">All age ranges</option>
-                    <option value="0–2 วัน">0–2 วัน</option>
-                    <option value="2–5 วัน">2–5 วัน</option>
-                    <option value="5–7 วัน">5–7 วัน</option>
-                    <option value="7–10 วัน">7–10 วัน</option>
-                    <option value="10–14 วัน">10–14 วัน</option>
+                   id="history-age" name="history-age" aria-label={t("กรองช่วงวันตามสี")}>
+                    <option value="">{t("All age ranges")}</option>
+                    <option value="0–2 วัน">{t("0–2 วัน")}</option>
+                    <option value="2–5 วัน">{t("2–5 วัน")}</option>
+                    <option value="5–7 วัน">{t("5–7 วัน")}</option>
+                    <option value="7–10 วัน">{t("7–10 วัน")}</option>
+                    <option value="10–14 วัน">{t("10–14 วัน")}</option>
                   </select>
-                  <select
-                    className="input"
-                    value={filterCal}
-                    onChange={e => setFilterCal(e.target.value)}
-                  >
-                    <option value="">All calibration</option>
-                    <option value="yes">Calibrated</option>
-                    <option value="no">Not calibrated</option>
-                  </select>
-                  <button className="btn secondary" onClick={exportCsv}>
-                    Export CSV
-                  </button>
                 </div>
 
-                <div className="tbl-wrap">
-                  <table className="tbl">
+                <p className="history-scroll-hint">{t("Scroll across the table to see all details.")}</p>
+                <div className="tbl-wrap" role="region" aria-label={t("ประวัติการวิเคราะห์")} tabIndex={0}>
+                  <table className="tbl history-table">
                     <thead>
                       <tr>
-                        <th>Preview</th>
-                        <th>Case ID</th>
-                        <th>Date</th>
-                        <th>Body Site</th>
-                        <th>Dominant Colors</th>
-                        <th>Estimated Age</th>
-                        <th>Calibration</th>
-                        <th>Save status</th>
-                        <th>Action</th>
+                        <th scope="col">{t("Preview")}</th>
+                        <th scope="col">{t("Case ID")}</th>
+                        <th scope="col">{t("Date")}</th>
+                        <th scope="col">{t("Body Site")}</th>
+                        <th scope="col">{t("Dominant Colors")}</th>
+                        <th scope="col">{t("Estimated Age")}</th>
+                        <th scope="col">{t("Calibration")}</th>
+                        <th scope="col">{t("Save status")}</th>
+                        <th scope="col">{t("Action")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredHistory.length === 0 ? (
                         <tr>
                           <td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>
-                            No matching records found.
+{isLoadingHistory ? t("กำลังโหลดประวัติ...") : history.length ? t("ไม่พบรายการที่ตรงกับตัวกรอง") : t("ยังไม่มีประวัติการวิเคราะห์")}
+                            {!isLoadingHistory && <div style={{ marginTop: 12 }}>{history.length ? <button className="btn secondary" onClick={() => { setSearchHistory(''); setFilterAge(''); }}>{t("ล้างตัวกรอง")}</button> : <button className="btn primary" onClick={() => setCurrentPage('analysis')}>{t("เริ่มวิเคราะห์ภาพ")}</button>}</div>}
                           </td>
                         </tr>
                       ) : (
                         filteredHistory.map(row => (
                           <tr key={row.id}>
+                            <td><button type="button" className="thumbnail-trigger" onClick={() => setSelectedCase(row)} aria-label={t("ดูภาพและรายงาน ")+row.caseId}>{row.thumbnail ? <img src={row.thumbnail} alt={t("ภาพตัวอย่าง ")+row.caseId} className="tbl-thumb" width={52} height={52} loading="lazy" decoding="async" /> : <span className="tbl-thumb-empty"><Icon name="image" /></span>}</button></td>
                             <td>
-                              {row.thumbnail ? (
-                                <img
-                                  src={row.thumbnail}
-                                  alt={row.caseId}
-                                  className="tbl-thumb"
-                                  onClick={() => setSelectedCase(row)}
-                                  style={{ cursor: 'pointer' }}
-                                  title="คลิกเพื่อดูรายละเอียดผลวิเคราะห์"
-                                />
-                              ) : (
-                                <div
-                                  className="tbl-thumb-empty"
-                                  onClick={() => setSelectedCase(row)}
-                                  style={{ cursor: 'pointer' }}
-                                  title="คลิกเพื่อดูรายละเอียดผลวิเคราะห์"
-                                >
-                                  No img
-                                </div>
-                              )}
-                            </td>
-                            <td>
-                              <div
+                              <button
                                 onClick={() => setSelectedCase(row)}
                                 style={{ cursor: 'pointer', color: 'var(--navy)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}
-                                title="คลิกเพื่อเปิดรายงานเคส"
-                              >
+                                title={t("คลิกเพื่อเปิดรายงานเคส")}
+                               type="button" className="case-link">
                                 <span>{row.caseId}</span>
-                                <span style={{ fontSize: 11, color: 'var(--teal)' }}>🔍</span>
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{row.file}</div>
+                                <span style={{ fontSize: 14, color: 'var(--teal)' }}><Icon name="search" /></span>
+                              </button>
+                              <div style={{ fontSize: 14, color: 'var(--muted)' }}>{row.file}</div>
                             </td>
-                            <td>{new Date(row.date).toLocaleString()}</td>
-                            <td><b>{row.bodySite}</b></td>
+                            <td>{new Date(row.date).toLocaleString(getLocale())}</td>
+                            <td><b>{t(row.bodySite)}</b></td>
                             <td>
                               {row.colors.map((c, i) => (
                                 <span key={i} className="color-dot" style={{ background: c }} title={c} />
                               ))}
                             </td>
-                            <td><span className="badge info">{row.age}</span></td>
+                            <td><span className="badge info">{t(AGE_UNAVAILABLE)}</span></td>
                             <td>
                               {row.calibrated ? (
-                                <span className="badge ok">Calibrated</span>
+                                <span className="badge ok">{t("Calibrated")}</span>
                               ) : (
-                                <span className="badge warn">{row.resultJson?.calibration?.is_calibrated === false ? 'Raw' : 'Unknown'}</span>
+                                <span className="badge warn">{row.resultJson?.calibration?.is_calibrated === false ? t("Raw") : t("Unknown")}</span>
                               )}
                             </td>
-                            <td><span className={`badge ${row.syncStatus === 'pending' ? 'warn' : 'ok'}`}>{row.syncStatus === 'pending' ? 'Pending sync' : 'MySQL'}</span></td>
+                            <td><span className={`badge ${row.syncStatus === 'pending' ? 'warn' : 'ok'}`}>{row.syncStatus === 'pending' ? t("Pending sync") : 'MySQL'}</span></td>
                             <td>
                               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                {row.syncStatus === 'pending' && <button className="btn teal" disabled={busyRecord !== null} onClick={() => syncPendingRecord(row)}>{busyRecord === row.id ? 'Saving...' : 'Save to MySQL'}</button>}
+                                {row.syncStatus === 'pending' && <button className="btn teal" disabled={busyRecord !== null} onClick={() => syncPendingRecord(row)}>{busyRecord === row.id ? t("Saving...") : t("Save to MySQL")}</button>}
                                 <button
                                   className="btn teal"
                                   onClick={() => setSelectedCase(row)}
-                                  style={{ padding: '5px 12px', fontSize: 12 }}
-                                  title="View full clinical case details"
-                                >
-                                  View Detail
-                                </button>
+                                  style={{ padding: '5px 12px', fontSize: 14 }}
+                                  title={t("View full clinical case details")}
+                                >{t("View Detail")}</button>
                                 <button
                                   className="btn secondary"
                                   onClick={() => deleteHistoryItem(row.id)}
                                   disabled={busyRecord !== null}
-                                  style={{ padding: '5px 10px', fontSize: 12, color: 'var(--danger)' }}
-                                  title="Delete record from MySQL"
-                                >
-                                  Delete
-                                </button>
+                                  style={{ padding: '5px 10px', fontSize: 14, color: 'var(--danger)' }}
+                                  title={t("Delete record from MySQL")}
+                                >{t("Delete")}</button>
                               </div>
                             </td>
                           </tr>
@@ -1732,34 +1680,32 @@ export default function App() {
           </section>
 
           {/* PROFILE PAGE */}
-          <section style={{ display: currentPage === 'profile' ? 'block' : 'none' }}>
-            <h1 className="page-title">Profile</h1>
-            <div className="page-sub">ข้อมูลบัญชีผู้ใช้งานทางคลินิก (Clinical Research Account)</div>
+          <section style={{ display: isAuthenticated && currentPage === 'profile' ? 'block' : 'none' }}>
+            <h1 className="page-title" id="page-title-profile" tabIndex={-1}>{t("Profile")}</h1>
+            <div className="page-sub">{t("ข้อมูลบัญชีผู้ใช้งานทางคลินิก (Clinical Research Account)")}</div>
 
             <div className="card">
               <div className="card-b profile-grid">
                 <div>
                   <div className="profile-photo">{getInitials(profile.name)}</div>
-                  <div style={{ marginTop: 12, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
-                    Forensic & Clinical Researcher
-                  </div>
+                  <div style={{ marginTop: 12, textAlign: 'center', fontSize: 14, color: 'var(--muted)' }}>{t("Forensic & Clinical Researcher")}</div>
                 </div>
 
                 <div>
-                  <form onSubmit={handleSaveProfile}>
+                  <form onSubmit={handleSaveProfile} aria-busy={isSavingProfile}>
                     <div className="grid g2">
                       <div>
-                        <label>Full name (ชื่อ-นามสกุล)</label>
+                        <label htmlFor="profile-name">{t("Full name (ชื่อ-นามสกุล)")}</label>
                         <input
                           className="input"
                           value={profile.name}
-                          onChange={e => setProfile({ ...profile, name: e.target.value })}
+                          onChange={e => { setProfile({ ...profile, name: e.target.value }); setProfileFeedback(null); }}
                           required
-                          placeholder="ชื่อ-นามสกุลของคุณ"
-                        />
+                          placeholder={t("ชื่อ-นามสกุลของคุณ")}
+                         id="profile-name" aria-describedby={profileFeedback ? "profile-feedback" : undefined} name="profile-name" autoComplete="name" />
                       </div>
                       <div>
-                        <label>Email Account (LOCK)</label>
+                        <label htmlFor="profile-email">{t("Email Account (LOCK)")}</label>
                         <input
                           type="email"
                           className="input"
@@ -1772,128 +1718,120 @@ export default function App() {
                             cursor: 'not-allowed',
                             border: '1px solid #cbd5e1'
                           }}
-                        />
-                        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                          🔒 อีเมลนี้ใช้เป็นรหัสระบุตัวตนและแยกข้อมูลเคสคนไข้ใน MySQL ไม่สามารถแก้ไขได้
-                        </div>
+                         id="profile-email" name="profile-email" autoComplete="email" />
+                        <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4 }}>
+                          <Icon name="lock" />{t(" อีเมลนี้ใช้เป็นรหัสระบุตัวตนและแยกข้อมูลเคสคนไข้ใน MySQL ไม่สามารถแก้ไขได้")}</div>
                       </div>
                     </div>
 
                     <div style={{ marginTop: 24 }}>
-                      <button type="submit" className="btn primary">
-                        Save Changes (บันทึกชื่อผู้ใช้)
-                      </button>
+                      <button type="submit" className="btn primary" disabled={isSavingProfile}>{t("Save Changes (บันทึกชื่อผู้ใช้)")}</button>
                     </div>
+                      {profileFeedback && <p id="profile-feedback" className={"form-feedback " + profileFeedback.kind} role={profileFeedback.kind === 'error' ? 'alert' : 'status'}>{t(profileFeedback.message)}</p>}
                   </form>
                 </div>
               </div>
             </div>
           </section>
+          </>}
         </main>
       </div>
 
       {/* CLINICAL CASE INSPECTION MODAL */}
       {selectedCase && (
         <div className="modal-backdrop" onClick={() => setSelectedCase(null)}>
-          <div className="modal-dialog case-report" role="dialog" aria-modal="true" aria-label="Analysis report" onClick={e => e.stopPropagation()}>
+          <div className="modal-dialog case-report" role="dialog" aria-modal="true"  onClick={e => e.stopPropagation()} ref={reportRef} tabIndex={-1} aria-labelledby="case-report-title" aria-describedby="case-report-meta">
             <div className="modal-header">
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <h2 style={{ fontSize: 20, color: 'var(--navy)' }}>{selectedCase.caseId}</h2>
+                <div className="report-heading">
+                  <h2 style={{ fontSize: 20, color: 'var(--navy)' }} id="case-report-title">{selectedCase.caseId}</h2>
                   <span className={`badge ${selectedCase.calibrated ? 'ok' : 'warn'}`}>
-                    {selectedCase.calibrated ? 'Calibrated' : selectedCase.resultJson?.calibration?.is_calibrated === false ? 'Raw / Uncalibrated' : 'Calibration unavailable'}
+                    {selectedCase.calibrated ? t("Calibrated") : selectedCase.resultJson?.calibration?.is_calibrated === false ? t("Raw / Uncalibrated") : t("Calibration unavailable")}
                   </span>
-                  <span className="badge info">{selectedCase.age}</span>
+                  <span className="badge info">{t(AGE_UNAVAILABLE)}</span>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  บันทึกเมื่อ: {new Date(selectedCase.date).toLocaleString()} • ตำแหน่งร่างกาย: <b>{selectedCase.bodySite}</b> • ไฟล์: {selectedCase.file}
+                <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4 }} id="case-report-meta">{t("บันทึกเมื่อ: ")}{new Date(selectedCase.date).toLocaleString(getLocale())}{t(" • ตำแหน่งร่างกาย: ")}<b>{t(selectedCase.bodySite)}</b>{t(" • ไฟล์: ")}{selectedCase.file}
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
+              <div className="report-actions">
+                <LanguageSwitcher />
+              <button
                   className="btn secondary"
-                  style={{ padding: '6px 12px', fontSize: 13 }}
+                  style={{ padding: '6px 12px', fontSize: 14 }}
                   onClick={() => window.print()}
-                  title="Print clinical assessment report"
+                  title={t("Print clinical assessment report")}
                 >
-                  🖨️ Print Report
-                </button>
+                  <Icon name="print" />{t(" Print Report")}</button>
                 <button
                   className="btn ghost"
                   style={{ padding: '6px 10px', fontSize: 16 }}
                   onClick={() => setSelectedCase(null)}
-                >
-                  ✕
+                 aria-label={t("ปิดรายงาน")} data-close-report>
+                  <Icon name="close" />
                 </button>
               </div>
             </div>
 
             <div className="modal-body">
+              {isLegacyDemo(selectedCase.resultJson) && <div className="callout warn" role="status">{t("รายการนี้บันทึกจากโหมดตัวอย่างในเบราว์เซอร์ ค่าขนาดและช่วงวันไม่ใช่ผลวิเคราะห์จาก backend กรุณาวิเคราะห์ภาพต้นฉบับใหม่")}</div>}
+
               {/* Image Previews Grid */}
               <div className="case-preview-grid">
                 <div className="case-preview-card">
                   <div className="img-wrap">
                     {selectedCase.resultJson?.previews?.original ? (
-                      <img src={selectedCase.resultJson.previews.original} alt="Original Image" />
+                      <img src={selectedCase.resultJson.previews.original} alt="Original Image"  loading="lazy" decoding="async" />
                     ) : selectedCase.thumbnail ? (
-                      <img src={selectedCase.thumbnail} alt="Thumbnail Preview" />
+                      <img src={selectedCase.thumbnail} alt="Thumbnail Preview"  loading="lazy" decoding="async" />
                     ) : (
-                      <div style={{ color: '#99adc2', fontSize: 13 }}>No preview image</div>
+                      <div style={{ color: '#99adc2', fontSize: 14 }}>{t("No preview image")}</div>
                     )}
                   </div>
-                  <div className="caption">1. ภาพถ่ายต้นฉบับ (Original)</div>
+                  <div className="caption">{t("1. ภาพถ่ายต้นฉบับ (Original)")}</div>
                 </div>
 
                 <div className="case-preview-card">
                   <div className="img-wrap">
                     {selectedCase.resultJson?.previews?.calibrated ? (
-                      <img src={selectedCase.resultJson.previews.calibrated} alt="Calibrated Image" />
+                      <img src={selectedCase.resultJson.previews.calibrated} alt="Calibrated Image"  loading="lazy" decoding="async" />
                     ) : (
-                      <div style={{ color: '#99adc2', fontSize: 13 }}>ไม่มีภาพ Calibrate แยกต่างหาก</div>
+                      <div style={{ color: '#99adc2', fontSize: 14 }}>{t("ไม่มีภาพ Calibrate แยกต่างหาก")}</div>
                     )}
                   </div>
-                  <div className="caption">2. ภาพปรับเทียบสีแล้ว (CCM Calibrated)</div>
+                  <div className="caption">{t("2. ภาพปรับเทียบสีแล้ว (CCM Calibrated)")}</div>
                 </div>
 
                 <div className="case-preview-card">
                   <div className="img-wrap">
                     {selectedCase.resultJson?.previews?.overlay ? (
-                      <img src={selectedCase.resultJson.previews.overlay} alt="Overlay & Mask" />
+                      <img src={selectedCase.resultJson.previews.overlay} alt="Overlay & Mask"  loading="lazy" decoding="async" />
                     ) : selectedCase.thumbnail ? (
-                      <img src={selectedCase.thumbnail} alt="Overlay Preview" />
+                      <img src={selectedCase.thumbnail} alt="Overlay Preview"  loading="lazy" decoding="async" />
                     ) : (
-                      <div style={{ color: '#99adc2', fontSize: 13 }}>ไม่มีภาพ Overlay</div>
+                      <div style={{ color: '#99adc2', fontSize: 14 }}>{t("ไม่มีภาพ Overlay")}</div>
                     )}
                   </div>
-                  <div className="caption">3. รอยแผลที่ตีกรอบ Mask (Overlay)</div>
+                  <div className="caption">{t("3. รอยแผลที่ตีกรอบ Mask (Overlay)")}</div>
                 </div>
               </div>
 
               {/* Assessment Summary KPI Grid */}
-              <div className="grid g4" style={{ marginBottom: 20 }}>
+              <div className="grid g3" style={{ marginBottom: 20 }}>
                 <div className="card kpi">
-                  <div className="t">Estimated Age Range</div>
-                  <div className="v" style={{ fontSize: 20 }}>{selectedCase.age}</div>
-                  <div className="small">Heuristic Color Band</div>
+                  <div className="t">{t("Estimated Age Range")}</div>
+                  <div className="v" style={{ fontSize: 20 }}>{t(AGE_UNAVAILABLE)}</div>
                 </div>
                 <div className="card kpi">
-                  <div className="t">Confidence Score</div>
-                  <div className="v" style={{ fontSize: 20 }}>
-                    {selectedCase.resultJson?.age_estimate?.confidence_score ?? selectedCase.confidence ?? 0}%
-                  </div>
-                  <div className="small">{selectedCase.resultJson?.age_estimate?.confidence || 'Confidence level'}</div>
-                </div>
-                <div className="card kpi">
-                  <div className="t">LOOCV Median ΔE00</div>
+                  <div className="t">{t("LOOCV Median ΔE00")}</div>
                   <div className="v" style={{ fontSize: 20 }}>
                     {selectedCase.resultJson?.calibration?.loocv_median_de00 != null
                       ? selectedCase.resultJson.calibration.loocv_median_de00.toFixed(2)
                       : selectedCase.deltaE00 != null ? selectedCase.deltaE00.toFixed(2) : '—'}
                   </div>
-                  <div className="small">ColorChecker Calibration Error</div>
+                  <div className="small">{t("ColorChecker Calibration Error")}</div>
                 </div>
                 <div className="card kpi">
-                  <div className="t">Wound Area (ขนาดแผล)</div>
+                  <div className="t">{t("Wound Area (ขนาดแผล)")}</div>
                   <div className="v" style={{ fontSize: 20 }}>
                     {selectedCase.resultJson?.wound_size?.area_cm2 != null
                       ? `${selectedCase.resultJson.wound_size.area_cm2} cm²`
@@ -1902,7 +1840,7 @@ export default function App() {
                   <div className="small">
                     {selectedCase.resultJson?.wound_size?.width_cm != null && selectedCase.resultJson?.wound_size?.length_cm != null
                       ? `${selectedCase.resultJson.wound_size.width_cm} × ${selectedCase.resultJson.wound_size.length_cm} cm`
-                      : 'Approximate area'}
+                      : t("Approximate area")}
                   </div>
                 </div>
               </div>
@@ -1911,8 +1849,8 @@ export default function App() {
               <div className="grid g2" style={{ marginBottom: 20 }}>
                 <div className="card">
                   <div className="card-h">
-                    <b>Dominant Color Profile (กลุ่มสีเด่น)</b>
-                    <span className="small">Extracted Clusters</span>
+                    <h2 className="section-title">{t("Dominant Color Profile (กลุ่มสีเด่น)")}</h2>
+                    <span className="small">{t("Extracted Clusters")}</span>
                   </div>
                   <div className="card-b">
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
@@ -1931,8 +1869,8 @@ export default function App() {
                         >
                           <span className="color-dot" style={{ background: col.hex, width: 20, height: 20 }} />
                           <div>
-                            <div style={{ fontSize: 12, fontWeight: 700 }}>{col.name}</div>
-                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                            <div style={{ fontSize: 14, fontWeight: 700 }}>{t(col.name)}</div>
+                            <div style={{ fontSize: 14, color: 'var(--muted)' }}>
                               {col.hex} • {col.percent}%
                             </div>
                           </div>
@@ -1946,18 +1884,18 @@ export default function App() {
 
                 <div className="card">
                   <div className="card-h">
-                    <b>Clinical Reasoning & Notes</b>
-                    <span className="small">เหตุผลประกอบการประเมิน</span>
+                    <h2 className="section-title">{t("Clinical Reasoning & Notes")}</h2>
+
                   </div>
                   <div className="card-b">
-                    <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-                      <b>Clinical Reasoning:</b>
+                    <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+                      <b>{t("Estimated Age:")}</b>
                       <p style={{ color: '#4a5568', marginTop: 4 }}>
-                        {selectedCase.resultJson?.age_estimate?.reason || selectedCase.notes || 'ไม่มีบันทึกเพิ่มเติม'}
+                        {t(AGE_UNAVAILABLE)}
                       </p>
-                      {selectedCase.notes && selectedCase.notes !== selectedCase.resultJson?.age_estimate?.reason && (
+                      {selectedCase.notes && (
                         <div style={{ marginTop: 10 }}>
-                          <b>Clinician Notes:</b>
+                          <b>{t("Clinician Notes:")}</b>
                           <p style={{ color: '#4a5568', marginTop: 2 }}>{selectedCase.notes}</p>
                         </div>
                       )}
@@ -1968,35 +1906,35 @@ export default function App() {
 
               {selectedCase.resultJson ? (
                 <AnalysisDetails result={selectedCase.resultJson} />
-              ) : <div className="callout" role="status">This older record has no saved colour or histogram details. Analyse the original photo again to create a complete record.</div>}
+              ) : <div className="callout" role="status">{t("This older record has no saved colour or histogram details. Analyse the original photo again to create a complete record.")}</div>}
 
               {/* Calibration Card Patches Table if present */}
               {selectedCase.resultJson?.calibration?.table && selectedCase.resultJson.calibration.table.length > 0 && (
                 <div className="card" style={{ marginBottom: 20 }}>
                   <div className="card-h">
-                    <b>ColorChecker Scale Calibration Metrics (ΔE00)</b>
-                    <span className="small">Leave-One-Out Cross-Validation (LOOCV)</span>
+                    <h2 className="section-title">{t("ColorChecker Scale Calibration Metrics (ΔE00)")}</h2>
+                    <span className="small">{t("Leave-One-Out Cross-Validation (LOOCV)")}</span>
                   </div>
                   <div className="card-b">
-                    <div className="tbl-wrap" style={{ maxHeight: 240, overflowY: 'auto' }}>
-                      <table className="tbl" style={{ fontSize: 12 }}>
+                    <div className="tbl-wrap" style={{ maxHeight: 240, overflowY: 'auto' }} role="region" aria-label={t("รายละเอียดการปรับเทียบสี")} tabIndex={0}>
+                      <table className="tbl calibration-table" style={{ fontSize: 14 }}>
                         <thead>
                           <tr>
-                            <th>Type</th>
-                            <th>Patch Name</th>
-                            <th>RGB Captured</th>
-                            <th>RGB Corrected</th>
-                            <th>RGB Reference</th>
-                            <th>ΔE00 Before</th>
-                            <th>ΔE00 After</th>
-                            <th>LOOCV ΔE00</th>
+                            <th scope="col">{t("Type")}</th>
+                            <th scope="col">{t("Patch Name")}</th>
+                            <th scope="col">{t("RGB Captured")}</th>
+                            <th scope="col">{t("RGB Corrected")}</th>
+                            <th scope="col">{t("RGB Reference")}</th>
+                            <th scope="col">{t("ΔE00 Before")}</th>
+                            <th scope="col">{t("ΔE00 After")}</th>
+                            <th scope="col">{t("LOOCV ΔE00")}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {selectedCase.resultJson.calibration.table.map((row, i) => (
                             <tr key={i}>
-                              <td><b>{row.kind}</b></td>
-                              <td>{row.name}</td>
+                              <td><b>{t(row.kind)}</b></td>
+                              <td>{t(row.name)}</td>
                               <td>{row.rgb_captured?.join(', ')}</td>
                               <td>{row.rgb_corrected?.join(', ')}</td>
                               <td>{row.rgb_reference?.join(', ')}</td>
@@ -2013,13 +1951,9 @@ export default function App() {
               )}
 
               {/* Clinical Disclaimer */}
-              <div className="callout warn" style={{ fontSize: 12 }}>
-                <b>⚠️ คำเตือนทางการแพทย์และนิติเวช (Clinical & Forensic Disclaimer):</b>
-                <br />
-                ผลการประเมินช่วงวันของรอยฟกช้ำเป็นเพียง Heuristic จากสเปกตรัมสีสำหรับงานวิจัยเท่านั้น
-                สีของบาดแผลเพียงอย่างเดียวไม่สามารถระบุวันเวลาบาดเจ็บได้อย่างแน่นอนทางนิติวิทยาศาสตร์
-                เนื่องจากปัจจัยด้านสีผิวพื้นฐานของผู้ป่วย ตำแหน่งอวัยวะ และการฟื้นตัวของเนื้อเยื่อเฉพาะบุคคล
-              </div>
+              <div className="callout warn" style={{ fontSize: 14 }}>
+                <b><Icon name="alert" />{t(" คำเตือนทางการแพทย์และนิติเวช (Clinical & Forensic Disclaimer):")}</b>
+                <br />{t("ระบบยังไม่สามารถระบุอายุรอยฟกช้ำได้ ผลสีและขนาดเป็นข้อมูลต้นแบบที่ต้องตรวจสอบร่วมกับภาพต้นฉบับ")}</div>
             </div>
 
             <div className="modal-footer">
@@ -2027,14 +1961,11 @@ export default function App() {
                 className="btn secondary"
                 onClick={() => window.print()}
               >
-                🖨️ Print / Export PDF
-              </button>
+                <Icon name="print" />{t(" Print / Export PDF")}</button>
               <button
                 className="btn primary"
                 onClick={() => setSelectedCase(null)}
-              >
-                Close (ปิด)
-              </button>
+              >{t("Close (ปิด)")}</button>
             </div>
           </div>
         </div>

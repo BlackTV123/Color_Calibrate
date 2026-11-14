@@ -21,10 +21,11 @@ def to_json_safe(obj: Any) -> Any:
     if isinstance(obj, (np.floating, float)):
         f = float(obj)
         return None if math.isnan(f) or math.isinf(f) else f
-    if isinstance(obj, (np.integer, int)):
-        return int(obj)
+    # bool subclasses int: preserve flags before handling integer values.
     if isinstance(obj, (np.bool_, bool)):
         return bool(obj)
+    if isinstance(obj, (np.integer, int)):
+        return int(obj)
     if isinstance(obj, np.ndarray):
         return None  # Never send raw large ndarrays in main JSON
     if obj is None or isinstance(obj, (str, int)):

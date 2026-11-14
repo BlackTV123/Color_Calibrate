@@ -50,13 +50,14 @@ test('failed and unauthorized deletions reject; local rows never call the API', 
   assert.equal(calls, 0);
 });
 
-test('delete sends authorization and waits for confirmed success', async () => {
+test('delete uses cookie authentication with a CSRF header and waits for confirmed success', async () => {
   let sent;
   await history.deleteHistoryRecord(row('1', { syncStatus: 'synced' }), 'signed-token', async (url, options) => {
     sent = { url, options };
     return { ok: true, json: async () => ({ success: true }) };
   });
-  assert.equal(sent.options.headers.Authorization, 'Bearer signed-token');
+  assert.equal(sent.options.headers['X-Requested-With'], 'BruiseWeb');
+  assert.equal(sent.options.headers.Authorization, undefined);
   assert.equal(sent.url, '/api/records/1');
   await assert.rejects(history.deleteHistoryRecord(row('1'), 'token', async () => ({ ok: true, json: async () => ({}) })));
 });
@@ -67,7 +68,8 @@ test('retry submits the original saved snapshot and stable client ID', async () 
   let payload;
   const saved = await history.sendHistoryRecord(pending, 'signed-token', async (url, options) => {
     payload = JSON.parse(options.body);
-    assert.equal(options.headers.Authorization, 'Bearer signed-token');
+    assert.equal(options.headers['X-Requested-With'], 'BruiseWeb');
+    assert.equal(options.headers.Authorization, undefined);
     return { ok: true, json: async () => ({ success: true, id: '21', createdAt: '2026-10-31T01:00:00Z' }) };
   });
   assert.deepEqual(payload.resultJson, snapshot);

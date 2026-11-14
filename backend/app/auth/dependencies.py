@@ -1,35 +1,23 @@
 from typing import Optional, Dict, Any
-from fastapi import Header, HTTPException, status
-from app.auth.security import decode_access_token
+from fastapi import Request, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from app.auth.security import COOKIE_NAME, decode_access_token
+from app.auth.state import validate_session
 
-
-async def get_current_user_optional(authorization: Optional[str] = Header(None)) -> Optional[Dict[str, Any]]:
-    """Optional auth dependency: returns user claims if valid Bearer token provided, else None."""
-    if not authorization or not authorization.startswith("Bearer "):
+async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
+    authorization = request.headers.get("authorization", "")
+    token = authorization[7:] if authorization.startswith("Bearer ") else request.cookies.get(COOKIE_NAME)
+    if not token:
         return None
-    token = authorization[7:].strip()
     try:
         claims = decode_access_token(token)
-        return claims
-    except Exception:
+        return claims if await run_in_threadpool(validate_session, claims) else None
+    except ValueError:
         return None
 
-
-async def get_current_user_required(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
-    """Strict auth dependency: raises 401 Unauthorized if Bearer token is missing or invalid."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or malformed Authorization header (Bearer token required)",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    token = authorization[7:].strip()
-    try:
-        claims = decode_access_token(token)
-        return claims
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Authentication failed: {str(e)}",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
+async def get_current_user_required(request: Request) -> Dict[str, Any]:
+    claims = await get_current_user_optional(request)
+    if claims is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired session",
+                            headers={"WWW-Authenticate": "Bearer"})
+    return claims

@@ -80,9 +80,9 @@ export class HistoryAuthenticationError extends Error {
   }
 }
 
-export async function sendHistoryRecord(record: HistoryItem, token: string, request = fetch): Promise<HistoryItem> {
+export async function sendHistoryRecord(record: HistoryItem, _sessionMarker: string, request = fetch): Promise<HistoryItem> {
   const response = await request('/api/records', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'BruiseWeb' },
     body: JSON.stringify(recordPayload(record)),
   });
   if (response.status === 401) throw new HistoryAuthenticationError();
@@ -92,10 +92,10 @@ export async function sendHistoryRecord(record: HistoryItem, token: string, requ
   return { ...record, id: String(data.id), date: data.createdAt || record.date, syncStatus: 'synced' };
 }
 
-export async function deleteHistoryRecord(record: HistoryItem, token: string, request = fetch): Promise<void> {
+export async function deleteHistoryRecord(record: HistoryItem, _sessionMarker: string, request = fetch): Promise<void> {
   if (normalizeHistoryItem(record).syncStatus === 'pending') return;
   const response = await request(`/api/records/${encodeURIComponent(record.id)}`, {
-    method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    method: 'DELETE', headers: { 'X-Requested-With': 'BruiseWeb' },
   });
   if (response.status === 401) throw new HistoryAuthenticationError();
   if (!response.ok) throw new Error('ลบไม่สำเร็จ รายการยังอยู่ในประวัติ');

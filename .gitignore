@@ -47,3 +47,10 @@ docker-compose.override.yml
 # Misc
 *.bak
 *.tmp
+
+# Private authentication state
+backend/.auth/
+credentials.json
+token.json
+
+.pytest_cache/

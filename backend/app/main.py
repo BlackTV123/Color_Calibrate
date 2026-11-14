@@ -1,16 +1,21 @@
 import json
+import re
+import logging
 import asyncio
 import hashlib
 from pathlib import Path
 from typing import Optional, Any
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, status, Depends
+from fastapi import Response, FastAPI, UploadFile, File, HTTPException, Query, status, Depends
 from fastapi.concurrency import run_in_threadpool
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.responses import JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from prisma import Prisma
+from prisma.errors import UniqueViolationError
 
 from app.auth import (
     hash_password,
@@ -19,9 +24,15 @@ from app.auth import (
     get_current_user_optional,
     get_current_user_required
 )
-from app.middleware import RateLimiterMiddleware, CacheControlAndSecurityMiddleware
+from app.middleware import RateLimiterMiddleware, CacheControlAndSecurityMiddleware, RequestProtectionMiddleware
+from app.auth.security import COOKIE_NAME, COOKIE_SECURE, DEFAULT_EXPIRY_SECONDS, password_needs_upgrade
+from app.auth.password_policy import check_new_password, PasswordCheckUnavailable
+from app.auth.state import reserve_login, clear_login, revoke_session, identifier
+
 from app.pipeline.analyse import analyse_photo_auto_bytes
 from app.serialize import to_json_safe, build_response
+
+auth_logger = logging.getLogger("bruise.auth")
 
 db = Prisma()
 
@@ -31,8 +42,8 @@ async def lifespan(app: FastAPI):
     try:
         await db.connect()
         print("[Prisma] Connected to MySQL database (bruise_db) successfully.")
-    except Exception as e:
-        print(f"[Prisma] Warning: Could not connect to MySQL: {e}")
+    except Exception:
+        print("[Prisma] Warning: Could not connect to MySQL. Check private database configuration.")
     yield
     if db.is_connected():
         await db.disconnect()
@@ -59,29 +70,28 @@ app.add_middleware(CacheControlAndSecurityMiddleware)
 # 3. Payload Compression: GZip responses > 1KB for faster transfer
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# 4. CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Same-origin web/API; reject cross-site writes and enforce TLS in production.
+app.add_middleware(RequestProtectionMiddleware)
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(request, exc):
+    if request.url.path.startswith("/api/auth/"):
+        return JSONResponse(status_code=422, content={"detail": "ข้อมูลที่ส่งมาไม่ถูกต้อง กรุณาตรวจสอบอีเมลและความยาวรหัสผ่าน"})
+    return await request_validation_exception_handler(request, exc)
+
 
 MAX_BYTES = 25 * 1024 * 1024  # 25 MB
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(min_length=1, max_length=254, strict=True)
+    password: str = Field(min_length=1, max_length=128, strict=True)
 
 
 class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    name: str
-    role: str = "Clinician"
-    org: str = "Clinical Forensic Lab"
+    email: str = Field(min_length=1, max_length=254, strict=True)
+    password: str = Field(min_length=15, max_length=128, strict=True)
+    name: str = Field(min_length=1, max_length=200, strict=True)
 
 
 class RecordCreateRequest(BaseModel):
@@ -101,10 +111,7 @@ class RecordCreateRequest(BaseModel):
 
 
 class ProfileUpdateRequest(BaseModel):
-    name: str
-    email: str
-    role: str = "Clinician"
-    org: str = "Clinical Forensic Lab"
+    name: str = Field(min_length=1, max_length=200, strict=True)
 
 
 @app.get("/api/health")
@@ -131,94 +138,75 @@ def health():
 async def register(body: RegisterRequest):
     if not db.is_connected():
         raise HTTPException(status_code=503, detail="Database service unavailable.")
-
     email_clean = body.email.strip().lower()
-    if not email_clean or "@" not in email_clean:
-        raise HTTPException(status_code=400, detail="รูปแบบอีเมลไม่ถูกต้อง")
-    if len(body.password) < 4:
-        raise HTTPException(status_code=400, detail="รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร")
-
+    if not re.fullmatch(r"[^\s@]+@gmail\.com", email_clean):
+        raise HTTPException(status_code=400, detail="กรุณาใช้อีเมลที่ลงท้ายด้วย @gmail.com เท่านั้น")
+    try:
+        await run_in_threadpool(check_new_password, body.password)
+    except PasswordCheckUnavailable:
+        raise HTTPException(status_code=503, detail="ตรวจสอบความปลอดภัยรหัสผ่านไม่ได้ กรุณาลองใหม่ภายหลัง")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    # Perform the same expensive hash operation for new and existing addresses.
+    password_hash = await run_in_threadpool(hash_password, body.password)
     existing = await db.user.find_unique(where={"email": email_clean})
-    if existing:
-        raise HTTPException(status_code=400, detail="อีเมลนี้มีอยู่ในระบบแล้ว กรุณาเข้าสู่ระบบ (Sign In)")
-
-    user = await db.user.create(
-        data={
-            "email": email_clean,
-            "name": body.name.strip() or "Clinician",
-            "role": body.role or "Clinician",
-            "org": body.org or "Clinical Forensic Lab",
-            "passwordHash": hash_password(body.password)
-        }
-    )
-
-    # Issue signed JWT Bearer Token
-    token = create_access_token({
-        "sub": str(user.id),
-        "email": user.email,
-        "name": user.name,
-        "role": user.role
-    })
-
-    return {
-        "success": True,
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "role": user.role,
-            "org": user.org
-        }
-    }
+    if not existing:
+        try:
+            await db.user.create(data={
+                "email": email_clean, "name": body.name.strip() or "Clinician",
+                "role": "Clinician", "org": "Clinical Forensic Lab", "passwordHash": password_hash,
+            })
+        except UniqueViolationError:
+            pass  # A concurrent registration has the same public result.
+    return {"success": True, "message": "รับคำขอสมัครสมาชิกแล้ว หากมีบัญชีอยู่แล้วให้เข้าสู่ระบบด้วยรหัสผ่านเดิม"}
 
 
 @app.post("/api/auth/login")
-async def login(body: LoginRequest):
+async def login(body: LoginRequest, response: Response):
     if not db.is_connected():
         raise HTTPException(status_code=503, detail="Database service unavailable.")
-
     email_clean = body.email.strip().lower()
-    pwd = body.password
-
+    retry = await run_in_threadpool(reserve_login, email_clean)
+    account = identifier(email_clean)[:16]
+    if retry:
+        auth_logger.warning("auth_login_throttled account=%s", account)
+        raise HTTPException(status_code=429, detail="ลองเข้าสู่ระบบหลายครั้งเกินไป กรุณารอแล้วลองใหม่",
+                            headers={"Retry-After": str(retry)})
     user = await db.user.find_unique(where={"email": email_clean})
-    if not user:
-        raise HTTPException(status_code=401, detail="ไม่พบบัญชีผู้ใช้นี้ในระบบ กรุณาสมัครสมาชิกใหม่")
-
-    if user.passwordHash and not verify_password(pwd, user.passwordHash):
-        raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง")
-
-    # Issue signed JWT Bearer Token
-    token = create_access_token({
-        "sub": str(user.id),
-        "email": user.email,
-        "name": user.name,
-        "role": user.role
+    password_hash = user.passwordHash if user else ""
+    valid = await run_in_threadpool(verify_password, body.password, password_hash)
+    if not user or not valid:
+        auth_logger.warning("auth_login_failed account=%s", account)
+        raise HTTPException(status_code=401, detail="อีเมลหรือรหัสผ่านไม่ถูกต้อง")
+    if password_needs_upgrade(password_hash):
+        upgraded = await run_in_threadpool(hash_password, body.password)
+        await db.user.update(where={"id": user.id}, data={"passwordHash": upgraded})
+    await run_in_threadpool(clear_login, email_clean)
+    token = await run_in_threadpool(create_access_token, {
+        "sub": str(user.id), "email": user.email, "name": user.name, "role": user.role,
     })
+    response.set_cookie(COOKIE_NAME, token, httponly=True, secure=COOKIE_SECURE,
+                        samesite="strict", max_age=DEFAULT_EXPIRY_SECONDS, path="/")
+    auth_logger.info("auth_login_succeeded account=%s", account)
+    return {"success": True, "session_authenticated": True,
+            "user": {"id": user.id, "email": user.email, "name": user.name,
+                     "role": user.role, "org": user.org}}
 
-    return {
-        "success": True,
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "role": user.role,
-            "org": user.org
-        }
-    }
+
+@app.post("/api/auth/logout")
+async def logout(response: Response, claims: Optional[dict] = Depends(get_current_user_optional)):
+    if claims:
+        await run_in_threadpool(revoke_session, claims)
+    response.delete_cookie(COOKIE_NAME, path="/", secure=COOKIE_SECURE, httponly=True, samesite="strict")
+    return {"success": True}
 
 
 @app.get("/api/auth/me")
 async def get_current_user_profile(user_claims: dict = Depends(get_current_user_required)):
     """Validate signed claims and the account before restoring a browser session."""
-    await record_owner(user_claims)
-    return {
-        "success": True,
-        "user": user_claims
-    }
+    user = await record_owner(user_claims)
+    return {"success": True, "user": {"id": user.id, "email": user.email, "name": user.name,
+                                      "role": user.role, "org": user.org}}
 
 
 # -------------------------------------------------------------
@@ -397,60 +385,21 @@ async def delete_record(record_id: int, auth_user: dict = Depends(get_current_us
 # -------------------------------------------------------------
 
 @app.get("/api/profile")
-async def get_profile(
-    email: Optional[str] = None,
-    auth_user: Optional[dict] = Depends(get_current_user_optional)
-):
-    if not db.is_connected():
-        raise HTTPException(status_code=503, detail="Database service unavailable.")
-
-    lookup_email = (auth_user.get("email") if auth_user else None) or email or "demo@bruise.local"
-    user = await db.user.find_unique(where={"email": lookup_email})
-    if not user:
-        user = await db.user.find_first()
-
-    if not user:
-        return {
-            "name": "Demo Clinician",
-            "email": "demo@bruise.local",
-            "role": "Forensic Medical Specialist",
-            "org": "Clinical Forensic Lab"
-        }
-    return {
-        "name": user.name,
-        "email": user.email,
-        "role": user.role,
-        "org": user.org
-    }
+async def get_profile(auth_user: dict = Depends(get_current_user_required)):
+    user = await record_owner(auth_user)
+    return {"name": user.name, "email": user.email, "role": user.role, "org": user.org}
 
 
 @app.put("/api/profile")
-async def update_profile(
-    body: ProfileUpdateRequest,
-    auth_user: Optional[dict] = Depends(get_current_user_optional)
-):
-    if not db.is_connected():
-        raise HTTPException(status_code=503, detail="Database service unavailable.")
-
-    target_email = (auth_user.get("email") if auth_user else None) or body.email
-
-    user = await db.user.upsert(
-        where={"email": target_email},
-        data={
-            "create": {
-                "name": body.name,
-                "email": target_email,
-                "role": body.role,
-                "org": body.org
-            },
-            "update": {
-                "name": body.name,
-                "role": body.role,
-                "org": body.org
-            }
-        }
-    )
-    return {"success": True, "user": {"name": user.name, "email": user.email, "role": user.role, "org": user.org}}
+async def update_profile(body: ProfileUpdateRequest, auth_user: dict = Depends(get_current_user_required)):
+    user = await record_owner(auth_user)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Name is required")
+    # Only the display name is editable. Email/roles are never taken from the request.
+    user = await db.user.update(where={"id": user.id}, data={"name": name})
+    return {"success": True, "user": {"name": user.name, "email": user.email,
+                                    "role": user.role, "org": user.org}}
 
 
 # Serve React production build
